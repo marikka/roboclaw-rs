@@ -1,0 +1,9 @@
+[package]
+name = "roboclaw"
+version = "0.1.0"
+authors = ["Marek Miettinen <marek.miettinen@reaktor.fi>"]
+edition = "2018"
+
+[dependencies]
+serial = "0.4"
+crc16 = "0.4.0"
