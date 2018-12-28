@@ -29,7 +29,7 @@ enum Command {
 			GETVERSION = 21,
 			SETM1ENCCOUNT = 22,
 			SETM2ENCCOUNT = 23,
-			GETMBATT = 24,
+    GETMBATT = 24,
 			GETLBATT = 25,
 			SETMINLB = 26,
 			SETMAXLB = 27,
@@ -64,7 +64,7 @@ enum Command {
 			READM2PID = 56,
 			SETMAINVOLTAGES = 57,
 			SETLOGICVOLTAGES = 58,
-			GETMINMAXMAINVOLTAGES = 59,
+    GETMINMAXMAINVOLTAGES = 59,
 			GETMINMAXLOGICVOLTAGES = 60,
 			SETM1POSPID = 61,
 			SETM2POSPID = 62,
@@ -105,6 +105,10 @@ fn split_u16(x: u16) -> (u8, u8) {
     let high: u8 = (x >> 8) as u8;
     let low: u8 = x as u8;
     (high, low)
+}
+
+fn join_u8(high: u8, low: u8) -> u16 {
+    ((high as u16) << 8) | low as u16
 }
 
 fn crc(buf: &Vec<u8>) -> Vec<u8> {
@@ -149,6 +153,22 @@ impl <'a>Roboclaw<'a> {
         }
     }
     */
+
+    fn read_command(&mut self, command_code: u8, num_bytes: usize) -> Result<Vec<u8>, std::io::Error> {
+        const CRC_SIZE: usize = 2;
+        let command = vec![ADDRESS, command_code];
+        self.port.write(&command[..])?;
+        let mut buf = vec![0; num_bytes + CRC_SIZE];
+        self.port.read(&mut buf)?;
+        let crc = buf.split_off(num_bytes);
+        let crc_read = join_u8(crc[0], crc[1]);
+        let crc_calc = crc16::State::<crc16::XMODEM>::calculate(&[&command[..], &buf].concat());
+        if crc_read == crc_calc {
+            Ok(buf)
+        } else {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "crc error"))
+        }
+    }
 
     fn run_speed_command(&mut self, command: Command, speed: u8) -> Result<(), &str>  {
         let command_bytes = speed_command_bytes(command as u8, speed);
@@ -245,7 +265,16 @@ impl <'a>Roboclaw<'a> {
 	uint32_t ReadSpeedM2(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
 	bool ResetEncoders(uint8_t address);
 	bool ReadVersion(uint8_t address,char *version);
-	uint16_t ReadMainBatteryVoltage(uint8_t address,bool *valid=NULL);
+    */
+
+	//uint16_t ReadMainBatteryVoltage(uint8_t address,bool *valid=NULL);
+    pub fn read_main_battery_voltage(&mut self) -> Result<f32, std::io::Error> {
+        self.read_command(Command::GETMBATT as u8, 4).map(|data|
+            (join_u8(data[0], data[1]) as f32) / 10.0
+        )
+    }
+
+    /*
 	uint16_t ReadLogicBatteryVoltage(uint8_t address,bool *valid=NULL);
 	bool SetMinVoltageLogicBattery(uint8_t address, uint8_t voltage);
 	bool SetMaxVoltageLogicBattery(uint8_t address, uint8_t voltage);
@@ -280,7 +309,17 @@ impl <'a>Roboclaw<'a> {
 	bool ReadM2VelocityPID(uint8_t address,float &Kp_fp,float &Ki_fp,float &Kd_fp,uint32_t &qpps);
 	bool SetMainVoltages(uint8_t address,uint16_t min,uint16_t max);
 	bool SetLogicVoltages(uint8_t address,uint16_t min,uint16_t max);
-	bool ReadMinMaxMainVoltages(uint8_t address,uint16_t &min,uint16_t &max);
+    */
+
+    //bool ReadMinMaxMainVoltages(uint8_t address,uint16_t &min,uint16_t &max);
+
+    pub fn read_min_max_main_voltages(&mut self) -> Result<(f32, f32), std::io::Error> {
+        self.read_command(Command::GETMINMAXMAINVOLTAGES as u8, 4).map(|data|
+            (join_u8(data[0], data[1]) as f32 / 10.0, join_u8(data[2], data[3]) as f32 / 10.0)
+        )
+    }
+
+    /*
 	bool ReadMinMaxLogicVoltages(uint8_t address,uint16_t &min,uint16_t &max);
 	bool SetM1PositionPID(uint8_t address,float kp,float ki,float kd,uint32_t kiMax,uint32_t deadzone,uint32_t min,uint32_t max);
 	bool SetM2PositionPID(uint8_t address,float kp,float ki,float kd,uint32_t kiMax,uint32_t deadzone,uint32_t min,uint32_t max);
