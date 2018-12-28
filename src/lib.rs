@@ -25,12 +25,12 @@ enum Command {
 			GETM2ENC = 17,
 			GETM1SPEED = 18,
 			GETM2SPEED = 19,
-			RESETENC = 20,
+    RESETENC = 20,
 			GETVERSION = 21,
 			SETM1ENCCOUNT = 22,
 			SETM2ENCCOUNT = 23,
     GETMBATT = 24,
-			GETLBATT = 25,
+    GETLBATT = 25,
 			SETMINLB = 26,
 			SETMAXLB = 27,
 			SETM1PID = 28,
@@ -79,7 +79,7 @@ enum Command {
 			GETPINFUNCTIONS = 75,
 			SETDEADBAND	= 76,
 			GETDEADBAND	= 77,
-			GETENCODERS = 78,
+GETENCODERS = 78,
 			GETISPEEDS = 79,
 			RESTOREDEFAULTS = 80,
 			GETTEMP = 82,
@@ -109,6 +109,10 @@ fn split_u16(x: u16) -> (u8, u8) {
 
 fn join_u8(high: u8, low: u8) -> u16 {
     ((high as u16) << 8) | low as u16
+}
+
+fn join_u8_u32(byte0: u8, byte1: u8, byte2: u8, byte3: u8) -> u32 {
+    ((byte0 as u32) << 24) | ((byte1 as u32) << 16) | ((byte2 as u32) << 8) | (byte3 as u32)
 }
 
 fn crc(buf: &Vec<u8>) -> Vec<u8> {
@@ -167,6 +171,20 @@ impl <'a>Roboclaw<'a> {
             Ok(buf)
         } else {
             Err(std::io::Error::new(std::io::ErrorKind::Other, "crc error"))
+        }
+    }
+
+    fn write_simple_command(&mut self, command_code: u8) -> Result<(), std::io::Error> {
+        let command = vec![ADDRESS, command_code];
+        let crc = crc(&command);
+        let command_bytes = [&[ADDRESS], &command[..], &crc[..]].concat();
+        self.port.write(&command_bytes)?;
+        let mut buf = vec![0; 1];
+        self.port.read(&mut buf)?;
+        if buf[0] == 0xFF {
+            Ok(())
+        } else {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "return value error"))
         }
     }
 
@@ -263,19 +281,31 @@ impl <'a>Roboclaw<'a> {
     /*
 	uint32_t ReadSpeedM1(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
 	uint32_t ReadSpeedM2(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
-	bool ResetEncoders(uint8_t address);
+    */
+    //bool ResetEncoders(uint8_t address);
+    pub fn reset_encoders(&mut self) -> Result<(), std::io::Error> {
+        self.write_simple_command(Command::RESETENC as u8)
+    }
+
+    /*
 	bool ReadVersion(uint8_t address,char *version);
     */
 
 	//uint16_t ReadMainBatteryVoltage(uint8_t address,bool *valid=NULL);
     pub fn read_main_battery_voltage(&mut self) -> Result<f32, std::io::Error> {
-        self.read_command(Command::GETMBATT as u8, 4).map(|data|
+        self.read_command(Command::GETMBATT as u8, 2).map(|data|
+            (join_u8(data[0], data[1]) as f32) / 10.0
+        )
+    }
+
+    //uint16_t ReadLogicBatteryVoltage(uint8_t address,bool *valid=NULL);
+    pub fn read_logic_battery_voltage(&mut self) -> Result<f32, std::io::Error> {
+        self.read_command(Command::GETLBATT as u8, 2).map(|data|
             (join_u8(data[0], data[1]) as f32) / 10.0
         )
     }
 
     /*
-	uint16_t ReadLogicBatteryVoltage(uint8_t address,bool *valid=NULL);
 	bool SetMinVoltageLogicBattery(uint8_t address, uint8_t voltage);
 	bool SetMaxVoltageLogicBattery(uint8_t address, uint8_t voltage);
 	bool SetM1VelocityPID(uint8_t address, float Kp, float Ki, float Kd, uint32_t qpps);
@@ -334,7 +364,15 @@ impl <'a>Roboclaw<'a> {
 	bool GetPinFunctions(uint8_t address, uint8_t &S3mode, uint8_t &S4mode, uint8_t &S5mode);
 	bool SetDeadBand(uint8_t address, uint8_t Min, uint8_t Max);
 	bool GetDeadBand(uint8_t address, uint8_t &Min, uint8_t &Max);
-	bool ReadEncoders(uint8_t address,uint32_t &enc1,uint32_t &enc2);
+    */
+	//bool ReadEncoders(uint8_t address,uint32_t &enc1,uint32_t &enc2);
+    pub fn read_encoders(&mut self) -> Result<(u32, u32), std::io::Error> {
+        self.read_command(Command::GETENCODERS as u8, 8).map(|data|
+            (join_u8_u32(data[0], data[1], data[2], data[3]), join_u8_u32(data[4], data[6], data[6], data[7]))
+        )
+    }
+
+    /*
 	bool ReadISpeeds(uint8_t address,uint32_t &ispeed1,uint32_t &ispeed2);
 	bool RestoreDefaults(uint8_t address);
 	bool ReadTemp(uint8_t address, uint16_t &temp);
