@@ -2,6 +2,50 @@ extern crate serial;
 use serial::prelude::*;
 
 extern crate crc16;
+#[macro_use]
+extern crate bitflags;
+
+bitflags! {
+    pub struct ConfigFlags: u16 {
+    const RC_MODE = 0x0000;
+    const ANALOG_MODE = 0x0001;
+    const SIMPLE_SERIAL_MODE = 0x0002;
+    const PACKET_SERIAL_MODE = 0x0003;
+    const BATTERY_MODE_OFF = 0x0000;
+    const BATTERY_MODE_AUTO = 0x0004;
+    const BATTERY_MODE_2_CELL = 0x0008;
+    const BATTERY_MODE_3_CELL = 0x000C;
+    const BATTERY_MODE_4_CELL = 0x0010;
+    const BATTERY_MODE_5_CELL = 0x0014;
+    const BATTERY_MODE_6_CELL = 0x0018;
+    const BATTERY_MODE_7_CELL = 0x001C;
+    const MIXING = 0x0020;
+    const EXPONENTIAL = 0x0040;
+    const MCU = 0x0080;
+    const BAUDRATE_2400 = 0x0000;
+    const BAUDRATE_9600 = 0x0020;
+    const BAUDRATE_19200 = 0x0040;
+    const BAUDRATE_38400 = 0x0060;
+    const BAUDRATE_57600 = 0x0080;
+    const BAUDRATE_115200 = 0x00A0;
+    const BAUDRATE_230400 = 0x00C0;
+    const BAUDRATE_460800 = 0x00E0;
+    const FLIPSWITCH = 0x0100;
+    const PACKET_ADDRESS_0x80 = 0x0000;
+    const PACKET_ADDRESS_0x81 = 0x0100;
+    const PACKET_ADDRESS_0x82 = 0x0200;
+    const PACKET_ADDRESS_0x83 = 0x0300;
+    const PACKET_ADDRESS_0x84 = 0x0400;
+    const PACKET_ADDRESS_0x85 = 0x0500;
+    const PACKET_ADDRESS_0x86 = 0x0600;
+    const PACKET_ADDRESS_0x87 = 0x0700;
+    const SLAVE_MODE = 0x0800;
+    const RELAY_MODE = 0x1000;
+    const SWAP_ENCODERS = 0x2000;
+    const SWAP_BUTTONS = 0x4000;
+    const MULTI_UNIT_MODE = 0x8000;
+    }
+}
 
 const ADDRESS: u8 = 0x80;
 
@@ -79,7 +123,7 @@ enum Command {
 			GETPINFUNCTIONS = 75,
 			SETDEADBAND	= 76,
 			GETDEADBAND	= 77,
-GETENCODERS = 78,
+    GETENCODERS = 78,
 			GETISPEEDS = 79,
 			RESTOREDEFAULTS = 80,
 			GETTEMP = 82,
@@ -91,7 +135,7 @@ GETENCODERS = 78,
 			WRITENVM = 94,
 			READNVM = 95,	//Reloads values from Flash into Ram
 			SETCONFIG = 98,
-			GETCONFIG = 99,
+    GETCONFIG = 99,
 			SETM1MAXCURRENT = 133,
 			SETM2MAXCURRENT = 134,
 			GETM1MAXCURRENT = 135,
@@ -384,7 +428,15 @@ impl <'a>Roboclaw<'a> {
 	bool WriteNVM(uint8_t address);
 	bool ReadNVM(uint8_t address);
 	bool SetConfig(uint8_t address, uint16_t config);
-	bool GetConfig(uint8_t address, uint16_t &config);
+    */
+	//bool GetConfig(uint8_t address, uint16_t &config);
+    pub fn get_config(&mut self) -> Result<ConfigFlags, std::io::Error> {
+        self.read_command(Command::GETCONFIG as u8, 2).map(|data|
+            ConfigFlags::from_bits(join_u8(data[0], data[1])).unwrap()
+        )
+    }
+
+    /*
 	bool SetM1MaxCurrent(uint8_t address,uint32_t max);
 	bool SetM2MaxCurrent(uint8_t address,uint32_t max);
 	bool ReadM1MaxCurrent(uint8_t address,uint32_t &max);
