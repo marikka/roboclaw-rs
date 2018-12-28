@@ -412,7 +412,7 @@ impl <'a>Roboclaw<'a> {
 	//bool ReadEncoders(uint8_t address,uint32_t &enc1,uint32_t &enc2);
     pub fn read_encoders(&mut self) -> Result<(u32, u32), std::io::Error> {
         self.read_command(Command::GETENCODERS as u8, 8).map(|data|
-            (join_u8_u32(data[0], data[1], data[2], data[3]), join_u8_u32(data[4], data[6], data[6], data[7]))
+            (join_u8_u32(data[0], data[1], data[2], data[3]), join_u8_u32(data[4], data[5], data[6], data[7]))
         )
     }
 
