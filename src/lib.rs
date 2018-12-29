@@ -103,9 +103,9 @@ enum Command {
 			SETM2PID = 29,
 			GETM1ISPEED = 30,
 			GETM2ISPEED = 31,
-			M1DUTY = 32,
-			M2DUTY = 33,
-			MIXEDDUTY = 34,
+    M1DUTY = 32,
+    M2DUTY = 33,
+    MIXEDDUTY = 34,
 			M1SPEED = 35,
 			M2SPEED = 36,
 			MIXEDSPEED = 37,
@@ -167,10 +167,12 @@ enum Command {
 			FLAGBOOTLOADER = 255 //Only available via USB communications
 }
 
-fn split_u16(x: u16) -> (u8, u8) {
-    let high: u8 = (x >> 8) as u8;
-    let low: u8 = x as u8;
-    (high, low)
+fn split_u16_u8(x: u16) -> [u8; 2] {
+    [(x >> 8) as u8, x as u8]
+}
+
+fn split_i16_u8(x: i16) -> [u8; 2] {
+    [(x >> 8) as u8, x as u8]
 }
 
 fn split_u32_u8(x: u32) -> [u8;4] {
@@ -191,8 +193,7 @@ fn join_u8_u32(byte0: u8, byte1: u8, byte2: u8, byte3: u8) -> u32 {
 
 fn crc(buf: &Vec<u8>) -> Vec<u8> {
     let crc = crc16::State::<crc16::XMODEM>::calculate(&buf);
-    let (high, low) = split_u16(crc);
-    vec![high, low]
+    split_u16_u8(crc).to_vec()
 }
 
 pub struct Roboclaw<'a> {
@@ -360,9 +361,26 @@ impl <'a>Roboclaw<'a> {
 	bool SetM2VelocityPID(uint8_t address, float Kp, float Ki, float Kd, uint32_t qpps);
 	uint32_t ReadISpeedM1(uint8_t address,uint8_t *status=NULL,bool *valid=NULL);
 	uint32_t ReadISpeedM2(uint8_t address,uint8_t *status=NULL,bool *valid=NULL);
-	bool DutyM1(uint8_t address, uint16_t duty);
-	bool DutyM2(uint8_t address, uint16_t duty);
-	bool DutyM1M2(uint8_t address, uint16_t duty1, uint16_t duty2);
+    */
+
+    //bool DutyM1(uint8_t address, uint16_t duty);
+    pub fn duty_m1(&mut self, duty: i16) -> std::io::Result<()> {
+        self.write_command(Command::M1DUTY as u8, &split_i16_u8(duty).to_vec())
+    }
+
+    //bool DutyM2(uint8_t address, uint16_t duty);
+    pub fn duty_m2(&mut self, duty: i16) -> std::io::Result<()> {
+        self.write_command(Command::M2DUTY as u8, &split_i16_u8(duty).to_vec())
+    }
+
+    //bool DutyM1M2(uint8_t address, uint16_t duty1, uint16_t duty2);
+    pub fn duty_m1_m2(&mut self, duty1: i16, duty2: i16) -> std::io::Result<()> {
+        self.write_command(Command::MIXEDDUTY as u8, &[&split_i16_u8(duty1)[..], &split_i16_u8(duty2)[..]].concat())
+    }
+
+    /*
+
+
 	bool SpeedM1(uint8_t address, uint32_t speed);
 	bool SpeedM2(uint8_t address, uint32_t speed);
 	bool SpeedM1M2(uint8_t address, uint32_t speed1, uint32_t speed2);
