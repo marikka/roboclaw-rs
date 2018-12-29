@@ -112,7 +112,7 @@ enum Command {
 			M1SPEEDACCEL = 38,
 			M2SPEEDACCEL = 39,
 			MIXEDSPEEDACCEL = 40,
-M1SPEEDDIST = 41,
+    M1SPEEDDIST = 41,
 			M2SPEEDDIST = 42,
 			MIXEDSPEEDDIST = 43,
 			M1SPEEDACCELDIST = 44,
@@ -195,10 +195,6 @@ fn crc(buf: &Vec<u8>) -> Vec<u8> {
     vec![high, low]
 }
 
-fn speed_command_bytes(command_code: u8, speed: u8) -> Vec<u8> {
-    vec![ADDRESS, command_code, speed]
-}
-
 pub struct Roboclaw<'a> {
     port: &'a mut SerialPort
 }
@@ -208,31 +204,7 @@ impl <'a>Roboclaw<'a> {
         Roboclaw {port: port}
     }
 
-/*
-    pub fn run_command(&mut self, command: Command) -> Result<(), &str> {
-        let command_bytes = match command {
-            Command::ForwardM1(speed) | Command::BackwardsM1(speed)
-            | Command::ForwardM2(speed) | Command::BackwardsM2(speed)
-            | Command::DriveM1(speed) | Command::DriveM2(speed)
-            | Command::MixedDriveForward(speed) | Command::MixedDriveBackwards(speed)
-            | Command::MixedTurnRight(speed) | Command::MixedTurnLeft(speed)
-            | Command::MixedDrive(speed) | Command::MixedTurn(speed) => speed_command_bytes(command, speed),
-            Command::ReadFirmwareVersion => vec![21]
-        };
-        let checksum = crc(&command_bytes);
-        let command_bytes = [&[ADDRESS], &command_bytes[..], &checksum[..]].concat();
-        self.port.write(&command_bytes[..]).unwrap();
-        let mut buf = [0u8];
-        self.port.read(&mut buf).unwrap();
-        if buf[0] != 0xFF {
-            Err("error reading value")
-        } else {
-            Ok(())
-        }
-    }
-    */
-
-    fn read_command(&mut self, command_code: u8, num_bytes: usize) -> Result<Vec<u8>, std::io::Error> {
+    fn read_command(&mut self, command_code: u8, num_bytes: usize) -> std::io::Result<Vec<u8>> {
         const CRC_SIZE: usize = 2;
         let command = vec![ADDRESS, command_code];
         self.port.write(&command[..])?;
@@ -248,7 +220,7 @@ impl <'a>Roboclaw<'a> {
         }
     }
 
-    fn write_simple_command(&mut self, command_code: u8) -> Result<(), std::io::Error> {
+    fn write_simple_command(&mut self, command_code: u8) -> std::io::Result<()> {
         let command = vec![ADDRESS, command_code];
         let crc = crc(&command);
         let command_bytes = [&[ADDRESS], &command[..], &crc[..]].concat();
@@ -262,7 +234,7 @@ impl <'a>Roboclaw<'a> {
         }
     }
 
-    fn write_command(&mut self, command_code: u8, data: &Vec<u8>) -> Result<(), std::io::Error> {
+    fn write_command(&mut self, command_code: u8, data: &Vec<u8>) -> std::io::Result<()> {
         let mut command = vec![ADDRESS, command_code];
         let mut data_copy = data.clone();
         command.append(&mut data_copy);
@@ -278,26 +250,12 @@ impl <'a>Roboclaw<'a> {
         }
     }
 
-    fn run_speed_command(&mut self, command: Command, speed: u8) -> Result<(), &str>  {
-        let command_bytes = speed_command_bytes(command as u8, speed);
-        let checksum = crc(&command_bytes);
-        let command_bytes = [&[ADDRESS], &command_bytes[..], &checksum[..]].concat();
-        self.port.write(&command_bytes[..]).unwrap();
-        let mut buf = [0u8];
-        self.port.read(&mut buf).unwrap();
-        if buf[0] != 0xFF {
-            Err("error reading value")
-        } else {
-            Ok(())
-        }
+    pub fn forward_m1(&mut self, speed: u8) -> std::io::Result<()> {
+        self.write_command(Command::M1FORWARD as u8, &vec![speed])
     }
 
-    pub fn forward_m1(&mut self, speed: u8) -> Result<(), &str> {
-        self.run_speed_command(Command::M1FORWARD, speed)
-    }
-
-    pub fn backward_m1(&mut self, speed: u8) -> Result<(), &str> {
-        self.run_speed_command(Command::M1BACKWARD, speed)
+    pub fn backward_m1(&mut self, speed: u8) -> std::io::Result<()> {
+        self.write_command(Command::M1BACKWARD as u8, &vec![speed])
     }
 
     pub fn set_min_voltage_main_battery(voltage: u8) {
@@ -308,44 +266,44 @@ impl <'a>Roboclaw<'a> {
         unimplemented!()
     }
 
-    pub fn forward_m2(&mut self, speed: u8) -> Result<(), &str> {
-        self.run_speed_command(Command::M2FORWARD, speed)
+    pub fn forward_m2(&mut self, speed: u8) -> std::io::Result<()> {
+        self.write_command(Command::M2FORWARD as u8, &vec![speed])
     }
 
-    pub fn backward_m2(&mut self, speed: u8) -> Result<(), &str> {
-        self.run_speed_command(Command::M2BACKWARD, speed)
+    pub fn backward_m2(&mut self, speed: u8) -> std::io::Result<()> {
+        self.write_command(Command::M2BACKWARD as u8, &vec![speed])
     }
 
-    pub fn forward_backward_m1(&mut self, speed: u8) -> Result<(), &str> {
-        self.run_speed_command(Command::M17BIT, speed)
+    pub fn forward_backward_m1(&mut self, speed: u8) -> std::io::Result<()> {
+        self.write_command(Command::M17BIT as u8, &vec![speed])
     }
 
-    pub fn forward_backward_m2(&mut self, speed: u8) -> Result<(), &str> {
-        self.run_speed_command(Command::M27BIT, speed)
+    pub fn forward_backward_m2(&mut self, speed: u8) -> std::io::Result<()> {
+        self.write_command(Command::M27BIT as u8, &vec![speed])
     }
 
-    pub fn forward_mixed(&mut self, speed: u8) -> Result<(), &str> {
-        self.run_speed_command(Command::MIXEDFORWARD, speed)
+    pub fn forward_mixed(&mut self, speed: u8) -> Result<(), std::io::Error> {
+        self.write_command(Command::MIXEDFORWARD as u8, &vec![speed])
     }
 
-    pub fn backward_mixed(&mut self, speed: u8) -> Result<(), &str> {
-        self.run_speed_command(Command::MIXEDBACKWARD, speed)
+    pub fn backward_mixed(&mut self, speed: u8) -> std::io::Result<()> {
+        self.write_command(Command::MIXEDBACKWARD as u8, &vec![speed])
     }
 
-    pub fn turn_right_mixed(&mut self, speed: u8) -> Result<(), &str> {
-        self.run_speed_command(Command::MIXEDRIGHT, speed)
+    pub fn turn_right_mixed(&mut self, speed: u8) -> std::io::Result<()> {
+        self.write_command(Command::MIXEDRIGHT as u8, &vec![speed])
     }
 
-    pub fn turn_left_mixed(&mut self, speed: u8) -> Result<(), &str> {
-        self.run_speed_command(Command::MIXEDLEFT, speed)
+    pub fn turn_left_mixed(&mut self, speed: u8) -> std::io::Result<()> {
+        self.write_command(Command::MIXEDLEFT as u8, &vec![speed])
     }
 
-    pub fn forward_backward_mixed(&mut self, speed: u8) -> Result<(), &str> {
-        self.run_speed_command(Command::MIXEDFB, speed)
+    pub fn forward_backward_mixed(&mut self, speed: u8) -> std::io::Result<()> {
+        self.write_command(Command::MIXEDFB as u8, &vec![speed])
     }
 
-    pub fn left_right_mixed(&mut self, speed: u8) -> Result<(), &str> {
-        self.run_speed_command(Command::MIXEDLR, speed)
+    pub fn left_right_mixed(&mut self, speed: u8) -> std::io::Result<()> {
+        self.write_command(Command::MIXEDLR as u8, &vec![speed])
     }
 
     //uint32_t ReadEncM1(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
