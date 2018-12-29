@@ -47,6 +47,28 @@ bitflags! {
     }
 }
 
+bitflags! {
+    pub struct StatusFlags: u16 {
+    const NORMAL = 0x0000;
+    const M1_OVERCURRENT_WARNING = 0x0001;
+    const M2_OVERCURRENT_WARNING = 0x0002;
+    const E_STOP = 0x0004;
+    const TEMPERATURE_ERROR = 0x0008;
+    const TEMPERATURE2_ERROR = 0x0010;
+    const MAIN_BATTERY_HIGH_ERROR = 0x0020;
+    const LOGIC_BATTERY_HIGH_ERROR = 0x0040;
+    const LOGIC_BATTERY_LOW_ERROR = 0x0080;
+    const M1_DRIVER_FAULT = 0x0100;
+    const M2_DRIVER_FAULT = 0x0200;
+    const MAIN_BATTERY_HIGH_WARNING = 0x0400;
+    const MAIN_BATTERY_LOW_WARNING = 0x0800;
+    const TERMPERATURE_WARNING = 0x1000;
+    const TEMPERATURE2_WARNING = 0x2000;
+    const M1_HOME = 0x4000;
+    const M2_HOME = 0x8000;
+    }
+}
+
 const ADDRESS: u8 = 0x80;
 
 #[repr(u8)]
@@ -128,7 +150,7 @@ enum Command {
 			RESTOREDEFAULTS = 80,
 			GETTEMP = 82,
 			GETTEMP2 = 83,	//Only valid on some models
-			GETERROR = 90,
+    GETERROR = 90,
 			GETENCODERMODE = 91,
 			SETM1ENCODERMODE = 92,
 			SETM2ENCODERMODE = 93,
@@ -421,7 +443,16 @@ impl <'a>Roboclaw<'a> {
 	bool RestoreDefaults(uint8_t address);
 	bool ReadTemp(uint8_t address, uint16_t &temp);
 	bool ReadTemp2(uint8_t address, uint16_t &temp);
-	uint16_t ReadError(uint8_t address,bool *valid=NULL);
+    */
+
+    //uint16_t ReadError(uint8_t address,bool *valid=NULL);
+    pub fn read_error(&mut self) -> Result<StatusFlags, std::io::Error> {
+        self.read_command(Command::GETERROR as u8, 2).map(|data|
+            StatusFlags::from_bits(join_u8(data[0], data[1])).unwrap()
+        )
+    }
+
+    /*
 	bool ReadEncoderModes(uint8_t address, uint8_t &M1mode, uint8_t &M2mode);
 	bool SetM1EncoderMode(uint8_t address,uint8_t mode);
 	bool SetM2EncoderMode(uint8_t address,uint8_t mode);
