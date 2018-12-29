@@ -112,7 +112,7 @@ enum Command {
 			M1SPEEDACCEL = 38,
 			M2SPEEDACCEL = 39,
 			MIXEDSPEEDACCEL = 40,
-			M1SPEEDDIST = 41,
+M1SPEEDDIST = 41,
 			M2SPEEDDIST = 42,
 			MIXEDSPEEDDIST = 43,
 			M1SPEEDACCELDIST = 44,
@@ -171,6 +171,14 @@ fn split_u16(x: u16) -> (u8, u8) {
     let high: u8 = (x >> 8) as u8;
     let low: u8 = x as u8;
     (high, low)
+}
+
+fn split_u32_u8(x: u32) -> [u8;4] {
+    [(x >> 24) as u8, (x >> 16) as u8, (x >> 8) as u8, x as u8]
+}
+
+fn split_i32_u8(x: i32) -> [u8;4] {
+    [(x >> 24) as u8, (x >> 16) as u8, (x >> 8) as u8, x as u8]
 }
 
 fn join_u8(high: u8, low: u8) -> u16 {
@@ -242,6 +250,22 @@ impl <'a>Roboclaw<'a> {
 
     fn write_simple_command(&mut self, command_code: u8) -> Result<(), std::io::Error> {
         let command = vec![ADDRESS, command_code];
+        let crc = crc(&command);
+        let command_bytes = [&[ADDRESS], &command[..], &crc[..]].concat();
+        self.port.write(&command_bytes)?;
+        let mut buf = vec![0; 1];
+        self.port.read(&mut buf)?;
+        if buf[0] == 0xFF {
+            Ok(())
+        } else {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "return value error"))
+        }
+    }
+
+    fn write_command(&mut self, command_code: u8, data: &Vec<u8>) -> Result<(), std::io::Error> {
+        let mut command = vec![ADDRESS, command_code];
+        let mut data_copy = data.clone();
+        command.append(&mut data_copy);
         let crc = crc(&command);
         let command_bytes = [&[ADDRESS], &command[..], &crc[..]].concat();
         self.port.write(&command_bytes)?;
@@ -387,7 +411,16 @@ impl <'a>Roboclaw<'a> {
 	bool SpeedAccelM1(uint8_t address, uint32_t accel, uint32_t speed);
 	bool SpeedAccelM2(uint8_t address, uint32_t accel, uint32_t speed);
 	bool SpeedAccelM1M2(uint8_t address, uint32_t accel, uint32_t speed1, uint32_t speed2);
-	bool SpeedDistanceM1(uint8_t address, uint32_t speed, uint32_t distance, uint8_t flag=0);
+    */
+	//bool SpeedDistanceM1(uint8_t address, uint32_t speed, uint32_t distance, uint8_t flag=0);
+    pub fn speed_distance_m1(&mut self, speed: i32, distance: u32) -> Result<(), std::io::Error> {
+        let speed_bytes = split_i32_u8(speed);
+        let distance_bytes = split_u32_u8(distance);
+        let data = [&speed_bytes[..], &distance_bytes[..], &vec![1u8]].concat();
+        self.write_command(Command::M1SPEEDDIST as u8, &data)
+    }
+
+    /*
 	bool SpeedDistanceM2(uint8_t address, uint32_t speed, uint32_t distance, uint8_t flag=0);
 	bool SpeedDistanceM1M2(uint8_t address, uint32_t speed1, uint32_t distance1, uint32_t speed2, uint32_t distance2, uint8_t flag=0);
 	bool SpeedAccelDistanceM1(uint8_t address, uint32_t accel, uint32_t speed, uint32_t distance, uint8_t flag=0);
