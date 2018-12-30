@@ -403,9 +403,26 @@ impl<'a> Roboclaw<'a> {
         self.write_command(Command::M1SPEEDDIST as u8, &data)
     }
 
+
+    //bool SpeedDistanceM2(uint8_t address, uint32_t speed, uint32_t distance, uint8_t flag=0);
+    pub fn speed_distance_m2(&mut self, speed: i32, distance: u32) -> Result<(), std::io::Error> {
+        let speed_bytes = split_i32_u8(speed);
+        let distance_bytes = split_u32_u8(distance);
+        let data = [&speed_bytes[..], &distance_bytes[..], &vec![1u8]].concat();
+        self.write_command(Command::M2SPEEDDIST as u8, &data)
+    }
+
+    //bool SpeedDistanceM1M2(uint8_t address, uint32_t speed1, uint32_t distance1, uint32_t speed2, uint32_t distance2, uint8_t flag=0);
+    pub fn speed_distance_m1_m2(&mut self, speed_1: i32, distance_1: u32, speed_2: i32, distance_2: u32) -> Result<(), std::io::Error> {
+        let speed_1_bytes = split_i32_u8(speed_1);
+        let distance_1_bytes = split_u32_u8(distance_1);
+        let speed_2_bytes = split_i32_u8(speed_2);
+        let distance_2_bytes = split_u32_u8(distance_2);
+        let data = [&speed_1_bytes[..], &distance_1_bytes[..], &speed_2_bytes[..], &distance_2_bytes[..], &vec![1u8]].concat();
+        self.write_command(Command::MIXEDSPEEDDIST as u8, &data)
+    }
+
     /*
-    bool SpeedDistanceM2(uint8_t address, uint32_t speed, uint32_t distance, uint8_t flag=0);
-    bool SpeedDistanceM1M2(uint8_t address, uint32_t speed1, uint32_t distance1, uint32_t speed2, uint32_t distance2, uint8_t flag=0);
     bool SpeedAccelDistanceM1(uint8_t address, uint32_t accel, uint32_t speed, uint32_t distance, uint8_t flag=0);
     bool SpeedAccelDistanceM2(uint8_t address, uint32_t accel, uint32_t speed, uint32_t distance, uint8_t flag=0);
     bool SpeedAccelDistanceM1M2(uint8_t address, uint32_t accel, uint32_t speed1, uint32_t distance1, uint32_t speed2, uint32_t distance2, uint8_t flag=0);
