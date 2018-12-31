@@ -167,6 +167,13 @@ enum Command {
     FLAGBOOTLOADER = 255, //Only available via USB communications
 }
 
+#[derive(PartialEq, Debug)]
+pub enum BufferStatus {
+    NotEmpty(u8),
+    Empty,
+    LastCommandExecuting,
+}
+
 fn split_u16_u8(x: u16) -> [u8; 2] {
     [(x >> 8) as u8, x as u8]
 }
@@ -426,7 +433,24 @@ impl<'a> Roboclaw<'a> {
     bool SpeedAccelDistanceM1(uint8_t address, uint32_t accel, uint32_t speed, uint32_t distance, uint8_t flag=0);
     bool SpeedAccelDistanceM2(uint8_t address, uint32_t accel, uint32_t speed, uint32_t distance, uint8_t flag=0);
     bool SpeedAccelDistanceM1M2(uint8_t address, uint32_t accel, uint32_t speed1, uint32_t distance1, uint32_t speed2, uint32_t distance2, uint8_t flag=0);
-    bool ReadBuffers(uint8_t address, uint8_t &depth1, uint8_t &depth2);
+    */
+    //bool ReadBuffers(uint8_t address, uint8_t &depth1, uint8_t &depth2);
+    pub fn read_buffers(&mut self) -> std::io::Result<(BufferStatus, BufferStatus)> {
+        self.read_command(Command::GETBUFFERS as u8, 2)
+            .map(|data|
+            (match data[0] {
+                0x0 => BufferStatus::LastCommandExecuting,
+                0x80 => BufferStatus::Empty,
+                num => BufferStatus::NotEmpty(num)
+            }
+            , match data[1] {
+                0x0 => BufferStatus::LastCommandExecuting,
+                0x80 => BufferStatus::Empty,
+                num => BufferStatus::NotEmpty(num)
+            })
+        )
+    }
+    /*
     bool ReadPWMs(uint8_t address, int16_t &pwm1, int16_t &pwm2);
     bool ReadCurrents(uint8_t address, int16_t &current1, int16_t &current2);
     bool SpeedAccelM1M2_2(uint8_t address, uint32_t accel1, uint32_t speed1, uint32_t accel2, uint32_t speed2);
