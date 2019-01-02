@@ -397,7 +397,15 @@ impl<'a> Roboclaw<'a> {
 
     bool SpeedM1(uint8_t address, uint32_t speed);
     bool SpeedM2(uint8_t address, uint32_t speed);
-    bool SpeedM1M2(uint8_t address, uint32_t speed1, uint32_t speed2);
+    */
+    //bool SpeedM1M2(uint8_t address, uint32_t speed1, uint32_t speed2);
+    pub fn speed_m1_m2(&mut self, speed_1: i32, speed_2: i32) -> Result<(), std::io::Error> {
+        let speed_1_bytes = split_i32_u8(speed_1);
+        let speed_2_bytes = split_i32_u8(speed_2);
+        let data = [&speed_1_bytes[..], &speed_2_bytes[..]].concat();
+        self.write_command(Command::MIXEDSPEED as u8, &data)
+    }
+    /*
     bool SpeedAccelM1(uint8_t address, uint32_t accel, uint32_t speed);
     bool SpeedAccelM2(uint8_t address, uint32_t accel, uint32_t speed);
     bool SpeedAccelM1M2(uint8_t address, uint32_t accel, uint32_t speed1, uint32_t speed2);
@@ -432,8 +440,19 @@ impl<'a> Roboclaw<'a> {
     /*
     bool SpeedAccelDistanceM1(uint8_t address, uint32_t accel, uint32_t speed, uint32_t distance, uint8_t flag=0);
     bool SpeedAccelDistanceM2(uint8_t address, uint32_t accel, uint32_t speed, uint32_t distance, uint8_t flag=0);
-    bool SpeedAccelDistanceM1M2(uint8_t address, uint32_t accel, uint32_t speed1, uint32_t distance1, uint32_t speed2, uint32_t distance2, uint8_t flag=0);
     */
+
+    //bool SpeedAccelDistanceM1M2(uint8_t address, uint32_t accel, uint32_t speed1, uint32_t distance1, uint32_t speed2, uint32_t distance2, uint8_t flag=0);
+    pub fn speed_accel_distance_m1_m2(&mut self, accel: u32, speed_1: i32, distance_1: u32, speed_2: i32, distance_2: u32) -> Result<(), std::io::Error> {
+        let accel_bytes = split_u32_u8(accel);
+        let speed_1_bytes = split_i32_u8(speed_1);
+        let distance_1_bytes = split_u32_u8(distance_1);
+        let speed_2_bytes = split_i32_u8(speed_2);
+        let distance_2_bytes = split_u32_u8(distance_2);
+        let data = [&accel_bytes[..], &speed_1_bytes[..], &distance_1_bytes[..], &speed_2_bytes[..], &distance_2_bytes[..], &vec![1u8]].concat();
+        self.write_command(Command::MIXEDSPEEDACCELDIST as u8, &data)
+    }
+
     //bool ReadBuffers(uint8_t address, uint8_t &depth1, uint8_t &depth2);
     pub fn read_buffers(&mut self) -> std::io::Result<(BufferStatus, BufferStatus)> {
         self.read_command(Command::GETBUFFERS as u8, 2)
@@ -484,7 +503,29 @@ impl<'a> Roboclaw<'a> {
     bool ReadM2PositionPID(uint8_t address,float &Kp,float &Ki,float &Kd,uint32_t &KiMax,uint32_t &DeadZone,uint32_t &Min,uint32_t &Max);
     bool SpeedAccelDeccelPositionM1(uint8_t address,uint32_t accel,uint32_t speed,uint32_t deccel,uint32_t position,uint8_t flag);
     bool SpeedAccelDeccelPositionM2(uint8_t address,uint32_t accel,uint32_t speed,uint32_t deccel,uint32_t position,uint8_t flag);
-    bool SpeedAccelDeccelPositionM1M2(uint8_t address,uint32_t accel1,uint32_t speed1,uint32_t deccel1,uint32_t position1,uint32_t accel2,uint32_t speed2,uint32_t deccel2,uint32_t position2,uint8_t flag);
+    */
+    //bool SpeedAccelDeccelPositionM1M2(uint8_t address,uint32_t accel1,uint32_t speed1,uint32_t deccel1,uint32_t position1,uint32_t accel2,uint32_t speed2,uint32_t deccel2,uint32_t position2,uint8_t flag);
+    pub fn speed_accel_deccel_position_m1_m2(&mut self,
+        accel_1: u32, speed_1: i32, deccel_1: u32, position_1: u32,
+        accel_2: u32, speed_2: i32, deccel_2: u32, position_2: u32) -> Result<(), std::io::Error> {
+        let accel_1_bytes = split_u32_u8(accel_1);
+        let speed_1_bytes = split_i32_u8(speed_1);
+        let deccel_1_bytes = split_u32_u8(deccel_1);
+        let position_1_bytes = split_u32_u8(position_1);
+
+        let accel_2_bytes = split_u32_u8(accel_2);
+        let speed_2_bytes = split_i32_u8(speed_2);
+        let deccel_2_bytes = split_u32_u8(deccel_2);
+        let position_2_bytes = split_u32_u8(position_2);
+
+        let data = [
+            &accel_1_bytes[..], &speed_1_bytes[..], &deccel_1_bytes[..], &position_1_bytes[..],
+            &accel_2_bytes[..], &speed_2_bytes[..], &deccel_2_bytes[..], &position_2_bytes[..],
+            &vec![1u8]].concat();
+        self.write_command(Command::MIXEDSPEEDACCELDECCELPOS as u8, &data)
+    }
+
+    /*
     bool SetM1DefaultAccel(uint8_t address, uint32_t accel);
     bool SetM2DefaultAccel(uint8_t address, uint32_t accel);
     bool SetPinFunctions(uint8_t address, uint8_t S3mode, uint8_t S4mode, uint8_t S5mode);
