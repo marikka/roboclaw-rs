@@ -203,12 +203,12 @@ fn crc(buf: &Vec<u8>) -> Vec<u8> {
     split_u16_u8(crc).to_vec()
 }
 
-pub struct Roboclaw<'a> {
-    port: &'a mut SerialPort,
+pub struct Roboclaw<S: SerialPort + Sized> {
+    port: S,
 }
 
-impl<'a> Roboclaw<'a> {
-    pub fn new<T: SerialPort>(port: &'a mut T) -> Self {
+impl <S: SerialPort + Sized> Roboclaw<S> {
+    pub fn new(port: S) -> Self {
         Roboclaw { port: port }
     }
 
