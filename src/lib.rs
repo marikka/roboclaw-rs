@@ -340,10 +340,28 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
         unimplemented!()
     }
 
-    /*
-    uint32_t ReadSpeedM1(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
-    uint32_t ReadSpeedM2(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
-    */
+    //uint32_t ReadSpeedM1(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
+    pub fn read_speed_m1(&mut self) -> Result<(u32, u8), std::io::Error> {
+        self.read_command(Command::GETM1SPEED as u8, 5)
+            .map(|data| {
+                (
+                    join_u8_u32(data[0], data[1], data[2], data[3]),
+                    data[4],
+                )
+            })
+    }
+
+    //uint32_t ReadSpeedM2(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
+    pub fn read_speed_m2(&mut self) -> Result<(u32, u8), std::io::Error> {
+        self.read_command(Command::GETM2SPEED as u8, 5)
+            .map(|data| {
+                (
+                    join_u8_u32(data[0], data[1], data[2], data[3]),
+                    data[4],
+                )
+            })
+    }
+
     //bool ResetEncoders(uint8_t address);
     pub fn reset_encoders(&mut self) -> Result<(), std::io::Error> {
         self.write_simple_command(Command::RESETENC as u8)
