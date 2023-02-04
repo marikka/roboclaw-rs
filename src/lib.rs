@@ -70,6 +70,7 @@ const ADDRESS: u8 = 0x80;
 // be. Keeping it makes it easier for developers in the future to add these
 // extensions, so we'll just ignore dead code for now.
 #[allow(dead_code)]
+#[allow(clippy::upper_case_acronyms)]
 #[repr(u8)]
 enum Command {
     M1FORWARD = 0,
@@ -197,8 +198,8 @@ fn join_u8_u32(byte0: u8, byte1: u8, byte2: u8, byte3: u8) -> u32 {
     ((byte0 as u32) << 24) | ((byte1 as u32) << 16) | ((byte2 as u32) << 8) | (byte3 as u32)
 }
 
-fn crc(buf: &Vec<u8>) -> Vec<u8> {
-    let crc = crc16::State::<crc16::XMODEM>::calculate(&buf);
+fn crc(buf: &[u8]) -> Vec<u8> {
+    let crc = crc16::State::<crc16::XMODEM>::calculate(buf);
     split_u16_u8(crc).to_vec()
 }
 
@@ -214,9 +215,9 @@ impl Roboclaw {
     fn read_command(&mut self, command_code: u8, num_bytes: usize) -> std::io::Result<Vec<u8>> {
         const CRC_SIZE: usize = 2;
         let command = vec![ADDRESS, command_code];
-        self.port.write(&command[..])?;
+        self.port.write_all(&command[..])?;
         let mut buf = vec![0; num_bytes + CRC_SIZE];
-        self.port.read(&mut buf)?;
+        self.port.read_exact(&mut buf)?;
         let crc = buf.split_off(num_bytes);
         let crc_read = join_u8(crc[0], crc[1]);
         let crc_calc = crc16::State::<crc16::XMODEM>::calculate(&[&command[..], &buf].concat());
@@ -231,9 +232,9 @@ impl Roboclaw {
         let command = vec![ADDRESS, command_code];
         let crc = crc(&command);
         let command_bytes = [&[ADDRESS], &command[..], &crc[..]].concat();
-        self.port.write(&command_bytes)?;
+        self.port.write_all(&command_bytes)?;
         let mut buf = vec![0; 1];
-        self.port.read(&mut buf)?;
+        self.port.read_exact(&mut buf)?;
         if buf[0] == 0xFF {
             Ok(())
         } else {
@@ -244,15 +245,14 @@ impl Roboclaw {
         }
     }
 
-    fn write_command(&mut self, command_code: u8, data: &Vec<u8>) -> std::io::Result<()> {
+    fn write_command(&mut self, command_code: u8, mut data: Vec<u8>) -> std::io::Result<()> {
         let mut command = vec![ADDRESS, command_code];
-        let mut data_copy = data.clone();
-        command.append(&mut data_copy);
+        command.append(&mut data);
         let crc = crc(&command);
         let command_bytes = [&[ADDRESS], &command[..], &crc[..]].concat();
-        self.port.write(&command_bytes)?;
+        self.port.write_all(&command_bytes)?;
         let mut buf = vec![0; 1];
-        self.port.read(&mut buf)?;
+        self.port.read_exact(&mut buf)?;
         if buf[0] == 0xFF {
             Ok(())
         } else {
@@ -264,11 +264,11 @@ impl Roboclaw {
     }
 
     pub fn forward_m1(&mut self, speed: u8) -> std::io::Result<()> {
-        self.write_command(Command::M1FORWARD as u8, &vec![speed])
+        self.write_command(Command::M1FORWARD as u8, vec![speed])
     }
 
     pub fn backward_m1(&mut self, speed: u8) -> std::io::Result<()> {
-        self.write_command(Command::M1BACKWARD as u8, &vec![speed])
+        self.write_command(Command::M1BACKWARD as u8, vec![speed])
     }
 
     pub fn set_min_voltage_main_battery(_voltage: u8) {
@@ -280,43 +280,43 @@ impl Roboclaw {
     }
 
     pub fn forward_m2(&mut self, speed: u8) -> std::io::Result<()> {
-        self.write_command(Command::M2FORWARD as u8, &vec![speed])
+        self.write_command(Command::M2FORWARD as u8, vec![speed])
     }
 
     pub fn backward_m2(&mut self, speed: u8) -> std::io::Result<()> {
-        self.write_command(Command::M2BACKWARD as u8, &vec![speed])
+        self.write_command(Command::M2BACKWARD as u8, vec![speed])
     }
 
     pub fn forward_backward_m1(&mut self, speed: u8) -> std::io::Result<()> {
-        self.write_command(Command::M17BIT as u8, &vec![speed])
+        self.write_command(Command::M17BIT as u8, vec![speed])
     }
 
     pub fn forward_backward_m2(&mut self, speed: u8) -> std::io::Result<()> {
-        self.write_command(Command::M27BIT as u8, &vec![speed])
+        self.write_command(Command::M27BIT as u8, vec![speed])
     }
 
     pub fn forward_mixed(&mut self, speed: u8) -> Result<(), std::io::Error> {
-        self.write_command(Command::MIXEDFORWARD as u8, &vec![speed])
+        self.write_command(Command::MIXEDFORWARD as u8, vec![speed])
     }
 
     pub fn backward_mixed(&mut self, speed: u8) -> std::io::Result<()> {
-        self.write_command(Command::MIXEDBACKWARD as u8, &vec![speed])
+        self.write_command(Command::MIXEDBACKWARD as u8, vec![speed])
     }
 
     pub fn turn_right_mixed(&mut self, speed: u8) -> std::io::Result<()> {
-        self.write_command(Command::MIXEDRIGHT as u8, &vec![speed])
+        self.write_command(Command::MIXEDRIGHT as u8, vec![speed])
     }
 
     pub fn turn_left_mixed(&mut self, speed: u8) -> std::io::Result<()> {
-        self.write_command(Command::MIXEDLEFT as u8, &vec![speed])
+        self.write_command(Command::MIXEDLEFT as u8, vec![speed])
     }
 
     pub fn forward_backward_mixed(&mut self, speed: u8) -> std::io::Result<()> {
-        self.write_command(Command::MIXEDFB as u8, &vec![speed])
+        self.write_command(Command::MIXEDFB as u8, vec![speed])
     }
 
     pub fn left_right_mixed(&mut self, speed: u8) -> std::io::Result<()> {
-        self.write_command(Command::MIXEDLR as u8, &vec![speed])
+        self.write_command(Command::MIXEDLR as u8, vec![speed])
     }
 
     //uint32_t ReadEncM1(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
@@ -375,19 +375,19 @@ impl Roboclaw {
 
     //bool DutyM1(uint8_t address, uint16_t duty);
     pub fn duty_m1(&mut self, duty: i16) -> std::io::Result<()> {
-        self.write_command(Command::M1DUTY as u8, &split_i16_u8(duty).to_vec())
+        self.write_command(Command::M1DUTY as u8, split_i16_u8(duty).to_vec())
     }
 
     //bool DutyM2(uint8_t address, uint16_t duty);
     pub fn duty_m2(&mut self, duty: i16) -> std::io::Result<()> {
-        self.write_command(Command::M2DUTY as u8, &split_i16_u8(duty).to_vec())
+        self.write_command(Command::M2DUTY as u8, split_i16_u8(duty).to_vec())
     }
 
     //bool DutyM1M2(uint8_t address, uint16_t duty1, uint16_t duty2);
     pub fn duty_m1_m2(&mut self, duty1: i16, duty2: i16) -> std::io::Result<()> {
         self.write_command(
             Command::MIXEDDUTY as u8,
-            &[&split_i16_u8(duty1)[..], &split_i16_u8(duty2)[..]].concat(),
+            [&split_i16_u8(duty1)[..], &split_i16_u8(duty2)[..]].concat(),
         )
     }
 
@@ -402,7 +402,7 @@ impl Roboclaw {
         let speed_1_bytes = split_i32_u8(speed_1);
         let speed_2_bytes = split_i32_u8(speed_2);
         let data = [&speed_1_bytes[..], &speed_2_bytes[..]].concat();
-        self.write_command(Command::MIXEDSPEED as u8, &data)
+        self.write_command(Command::MIXEDSPEED as u8, data)
     }
     /*
     bool SpeedAccelM1(uint8_t address, uint32_t accel, uint32_t speed);
@@ -413,16 +413,16 @@ impl Roboclaw {
     pub fn speed_distance_m1(&mut self, speed: i32, distance: u32) -> Result<(), std::io::Error> {
         let speed_bytes = split_i32_u8(speed);
         let distance_bytes = split_u32_u8(distance);
-        let data = [&speed_bytes[..], &distance_bytes[..], &vec![1u8]].concat();
-        self.write_command(Command::M1SPEEDDIST as u8, &data)
+        let data = [&speed_bytes[..], &distance_bytes[..], &[1u8]].concat();
+        self.write_command(Command::M1SPEEDDIST as u8, data)
     }
 
     //bool SpeedDistanceM2(uint8_t address, uint32_t speed, uint32_t distance, uint8_t flag=0);
     pub fn speed_distance_m2(&mut self, speed: i32, distance: u32) -> Result<(), std::io::Error> {
         let speed_bytes = split_i32_u8(speed);
         let distance_bytes = split_u32_u8(distance);
-        let data = [&speed_bytes[..], &distance_bytes[..], &vec![1u8]].concat();
-        self.write_command(Command::M2SPEEDDIST as u8, &data)
+        let data = [&speed_bytes[..], &distance_bytes[..], &[1u8]].concat();
+        self.write_command(Command::M2SPEEDDIST as u8, data)
     }
 
     //bool SpeedDistanceM1M2(uint8_t address, uint32_t speed1, uint32_t distance1, uint32_t speed2, uint32_t distance2, uint8_t flag=0);
@@ -442,10 +442,10 @@ impl Roboclaw {
             &distance_1_bytes[..],
             &speed_2_bytes[..],
             &distance_2_bytes[..],
-            &vec![1u8],
+            &[1u8],
         ]
         .concat();
-        self.write_command(Command::MIXEDSPEEDDIST as u8, &data)
+        self.write_command(Command::MIXEDSPEEDDIST as u8, data)
     }
 
     /*
@@ -473,10 +473,10 @@ impl Roboclaw {
             &distance_1_bytes[..],
             &speed_2_bytes[..],
             &distance_2_bytes[..],
-            &vec![1u8],
+            &[1u8],
         ]
         .concat();
-        self.write_command(Command::MIXEDSPEEDACCELDIST as u8, &data)
+        self.write_command(Command::MIXEDSPEEDACCELDIST as u8, data)
     }
 
     //bool ReadBuffers(uint8_t address, uint8_t &depth1, uint8_t &depth2);
@@ -532,6 +532,7 @@ impl Roboclaw {
     bool SpeedAccelDeccelPositionM2(uint8_t address,uint32_t accel,uint32_t speed,uint32_t deccel,uint32_t position,uint8_t flag);
     */
     //bool SpeedAccelDeccelPositionM1M2(uint8_t address,uint32_t accel1,uint32_t speed1,uint32_t deccel1,uint32_t position1,uint32_t accel2,uint32_t speed2,uint32_t deccel2,uint32_t position2,uint8_t flag);
+    #[allow(clippy::too_many_arguments)]
     pub fn speed_accel_deccel_position_m1_m2(
         &mut self,
         accel_1: u32,
@@ -562,10 +563,10 @@ impl Roboclaw {
             &speed_2_bytes[..],
             &deccel_2_bytes[..],
             &position_2_bytes[..],
-            &vec![1u8],
+            &[1u8],
         ]
         .concat();
-        self.write_command(Command::MIXEDSPEEDACCELDECCELPOS as u8, &data)
+        self.write_command(Command::MIXEDSPEEDACCELDECCELPOS as u8, data)
     }
 
     /*
