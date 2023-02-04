@@ -1,9 +1,4 @@
-extern crate serial;
-use serial::prelude::*;
-
-extern crate crc16;
-#[macro_use]
-extern crate bitflags;
+use bitflags::bitflags;
 
 bitflags! {
     pub struct ConfigFlags: u16 {
@@ -203,13 +198,13 @@ fn crc(buf: &Vec<u8>) -> Vec<u8> {
     split_u16_u8(crc).to_vec()
 }
 
-pub struct Roboclaw<S: SerialPort + Sized> {
-    port: S,
+pub struct Roboclaw {
+    port: Box<dyn serialport::SerialPort>,
 }
 
-impl <S: SerialPort + Sized> Roboclaw<S> {
-    pub fn new(port: S) -> Self {
-        Roboclaw { port: port }
+impl Roboclaw {
+    pub fn new(port: Box<dyn serialport::SerialPort>) -> Self {
+        Roboclaw { port }
     }
 
     fn read_command(&mut self, command_code: u8, num_bytes: usize) -> std::io::Result<Vec<u8>> {
@@ -418,7 +413,6 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
         self.write_command(Command::M1SPEEDDIST as u8, &data)
     }
 
-
     //bool SpeedDistanceM2(uint8_t address, uint32_t speed, uint32_t distance, uint8_t flag=0);
     pub fn speed_distance_m2(&mut self, speed: i32, distance: u32) -> Result<(), std::io::Error> {
         let speed_bytes = split_i32_u8(speed);
@@ -428,12 +422,25 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
     }
 
     //bool SpeedDistanceM1M2(uint8_t address, uint32_t speed1, uint32_t distance1, uint32_t speed2, uint32_t distance2, uint8_t flag=0);
-    pub fn speed_distance_m1_m2(&mut self, speed_1: i32, distance_1: u32, speed_2: i32, distance_2: u32) -> Result<(), std::io::Error> {
+    pub fn speed_distance_m1_m2(
+        &mut self,
+        speed_1: i32,
+        distance_1: u32,
+        speed_2: i32,
+        distance_2: u32,
+    ) -> Result<(), std::io::Error> {
         let speed_1_bytes = split_i32_u8(speed_1);
         let distance_1_bytes = split_u32_u8(distance_1);
         let speed_2_bytes = split_i32_u8(speed_2);
         let distance_2_bytes = split_u32_u8(distance_2);
-        let data = [&speed_1_bytes[..], &distance_1_bytes[..], &speed_2_bytes[..], &distance_2_bytes[..], &vec![1u8]].concat();
+        let data = [
+            &speed_1_bytes[..],
+            &distance_1_bytes[..],
+            &speed_2_bytes[..],
+            &distance_2_bytes[..],
+            &vec![1u8],
+        ]
+        .concat();
         self.write_command(Command::MIXEDSPEEDDIST as u8, &data)
     }
 
@@ -443,31 +450,47 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
     */
 
     //bool SpeedAccelDistanceM1M2(uint8_t address, uint32_t accel, uint32_t speed1, uint32_t distance1, uint32_t speed2, uint32_t distance2, uint8_t flag=0);
-    pub fn speed_accel_distance_m1_m2(&mut self, accel: u32, speed_1: i32, distance_1: u32, speed_2: i32, distance_2: u32) -> Result<(), std::io::Error> {
+    pub fn speed_accel_distance_m1_m2(
+        &mut self,
+        accel: u32,
+        speed_1: i32,
+        distance_1: u32,
+        speed_2: i32,
+        distance_2: u32,
+    ) -> Result<(), std::io::Error> {
         let accel_bytes = split_u32_u8(accel);
         let speed_1_bytes = split_i32_u8(speed_1);
         let distance_1_bytes = split_u32_u8(distance_1);
         let speed_2_bytes = split_i32_u8(speed_2);
         let distance_2_bytes = split_u32_u8(distance_2);
-        let data = [&accel_bytes[..], &speed_1_bytes[..], &distance_1_bytes[..], &speed_2_bytes[..], &distance_2_bytes[..], &vec![1u8]].concat();
+        let data = [
+            &accel_bytes[..],
+            &speed_1_bytes[..],
+            &distance_1_bytes[..],
+            &speed_2_bytes[..],
+            &distance_2_bytes[..],
+            &vec![1u8],
+        ]
+        .concat();
         self.write_command(Command::MIXEDSPEEDACCELDIST as u8, &data)
     }
 
     //bool ReadBuffers(uint8_t address, uint8_t &depth1, uint8_t &depth2);
     pub fn read_buffers(&mut self) -> std::io::Result<(BufferStatus, BufferStatus)> {
-        self.read_command(Command::GETBUFFERS as u8, 2)
-            .map(|data|
-            (match data[0] {
-                0x0 => BufferStatus::LastCommandExecuting,
-                0x80 => BufferStatus::Empty,
-                num => BufferStatus::NotEmpty(num)
-            }
-            , match data[1] {
-                0x0 => BufferStatus::LastCommandExecuting,
-                0x80 => BufferStatus::Empty,
-                num => BufferStatus::NotEmpty(num)
-            })
-        )
+        self.read_command(Command::GETBUFFERS as u8, 2).map(|data| {
+            (
+                match data[0] {
+                    0x0 => BufferStatus::LastCommandExecuting,
+                    0x80 => BufferStatus::Empty,
+                    num => BufferStatus::NotEmpty(num),
+                },
+                match data[1] {
+                    0x0 => BufferStatus::LastCommandExecuting,
+                    0x80 => BufferStatus::Empty,
+                    num => BufferStatus::NotEmpty(num),
+                },
+            )
+        })
     }
     /*
     bool ReadPWMs(uint8_t address, int16_t &pwm1, int16_t &pwm2);
@@ -505,9 +528,17 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
     bool SpeedAccelDeccelPositionM2(uint8_t address,uint32_t accel,uint32_t speed,uint32_t deccel,uint32_t position,uint8_t flag);
     */
     //bool SpeedAccelDeccelPositionM1M2(uint8_t address,uint32_t accel1,uint32_t speed1,uint32_t deccel1,uint32_t position1,uint32_t accel2,uint32_t speed2,uint32_t deccel2,uint32_t position2,uint8_t flag);
-    pub fn speed_accel_deccel_position_m1_m2(&mut self,
-        accel_1: u32, speed_1: i32, deccel_1: u32, position_1: u32,
-        accel_2: u32, speed_2: i32, deccel_2: u32, position_2: u32) -> Result<(), std::io::Error> {
+    pub fn speed_accel_deccel_position_m1_m2(
+        &mut self,
+        accel_1: u32,
+        speed_1: i32,
+        deccel_1: u32,
+        position_1: u32,
+        accel_2: u32,
+        speed_2: i32,
+        deccel_2: u32,
+        position_2: u32,
+    ) -> Result<(), std::io::Error> {
         let accel_1_bytes = split_u32_u8(accel_1);
         let speed_1_bytes = split_i32_u8(speed_1);
         let deccel_1_bytes = split_u32_u8(deccel_1);
@@ -519,9 +550,17 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
         let position_2_bytes = split_u32_u8(position_2);
 
         let data = [
-            &accel_1_bytes[..], &speed_1_bytes[..], &deccel_1_bytes[..], &position_1_bytes[..],
-            &accel_2_bytes[..], &speed_2_bytes[..], &deccel_2_bytes[..], &position_2_bytes[..],
-            &vec![1u8]].concat();
+            &accel_1_bytes[..],
+            &speed_1_bytes[..],
+            &deccel_1_bytes[..],
+            &position_1_bytes[..],
+            &accel_2_bytes[..],
+            &speed_2_bytes[..],
+            &deccel_2_bytes[..],
+            &position_2_bytes[..],
+            &vec![1u8],
+        ]
+        .concat();
         self.write_command(Command::MIXEDSPEEDACCELDECCELPOS as u8, &data)
     }
 
