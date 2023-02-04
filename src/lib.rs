@@ -26,14 +26,14 @@ bitflags! {
     const BAUDRATE_230400 = 0x00C0;
     const BAUDRATE_460800 = 0x00E0;
     const FLIPSWITCH = 0x0100;
-    const PACKET_ADDRESS_0x80 = 0x0000;
-    const PACKET_ADDRESS_0x81 = 0x0100;
-    const PACKET_ADDRESS_0x82 = 0x0200;
-    const PACKET_ADDRESS_0x83 = 0x0300;
-    const PACKET_ADDRESS_0x84 = 0x0400;
-    const PACKET_ADDRESS_0x85 = 0x0500;
-    const PACKET_ADDRESS_0x86 = 0x0600;
-    const PACKET_ADDRESS_0x87 = 0x0700;
+    const PACKET_ADDRESS_0X80 = 0x0000;
+    const PACKET_ADDRESS_0X81 = 0x0100;
+    const PACKET_ADDRESS_0X82 = 0x0200;
+    const PACKET_ADDRESS_0X83 = 0x0300;
+    const PACKET_ADDRESS_0X84 = 0x0400;
+    const PACKET_ADDRESS_0X85 = 0x0500;
+    const PACKET_ADDRESS_0X86 = 0x0600;
+    const PACKET_ADDRESS_0X87 = 0x0700;
     const SLAVE_MODE = 0x0800;
     const RELAY_MODE = 0x1000;
     const SWAP_ENCODERS = 0x2000;
@@ -66,6 +66,10 @@ bitflags! {
 
 const ADDRESS: u8 = 0x80;
 
+// There's a bunch of code here for stuff that's not implemented yet, but could
+// be. Keeping it makes it easier for developers in the future to add these
+// extensions, so we'll just ignore dead code for now.
+#[allow(dead_code)]
 #[repr(u8)]
 enum Command {
     M1FORWARD = 0,
@@ -267,11 +271,11 @@ impl Roboclaw {
         self.write_command(Command::M1BACKWARD as u8, &vec![speed])
     }
 
-    pub fn set_min_voltage_main_battery(voltage: u8) {
+    pub fn set_min_voltage_main_battery(_voltage: u8) {
         unimplemented!()
     }
 
-    pub fn set_max_voltage_main_battery(voltage: u8) {
+    pub fn set_max_voltage_main_battery(_voltage: u8) {
         unimplemented!()
     }
 
@@ -326,12 +330,12 @@ impl Roboclaw {
     }
 
     //bool SetEncM1(uint8_t address, int32_t val);
-    pub fn set_enc_m1(&mut self, value: i32) -> Result<(), &str> {
+    pub fn set_enc_m1(&mut self, _value: i32) -> Result<(), &str> {
         unimplemented!()
     }
 
     //bool SetEncM2(uint8_t address, int32_t val);
-    pub fn set_enc_m2(&mut self, value: i32) -> Result<(), &str> {
+    pub fn set_enc_m2(&mut self, _value: i32) -> Result<(), &str> {
         unimplemented!()
     }
 
