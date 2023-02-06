@@ -271,14 +271,6 @@ impl Roboclaw {
         self.write_command(Command::M1BACKWARD as u8, vec![speed])
     }
 
-    pub fn set_min_voltage_main_battery(_voltage: u8) {
-        unimplemented!()
-    }
-
-    pub fn set_max_voltage_main_battery(_voltage: u8) {
-        unimplemented!()
-    }
-
     pub fn forward_m2(&mut self, speed: u8) -> std::io::Result<()> {
         self.write_command(Command::M2FORWARD as u8, vec![speed])
     }
@@ -319,30 +311,15 @@ impl Roboclaw {
         self.write_command(Command::MIXEDLR as u8, vec![speed])
     }
 
-    //uint32_t ReadEncM1(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
-    pub fn read_enc_m1(&mut self) -> Result<u32, &str> {
-        unimplemented!()
-    }
-
-    //uint32_t ReadEncM2(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
-    pub fn read_enc_m2(&mut self) -> Result<u32, &str> {
-        unimplemented!()
-    }
-
-    //bool SetEncM1(uint8_t address, int32_t val);
-    pub fn set_enc_m1(&mut self, _value: i32) -> Result<(), &str> {
-        unimplemented!()
-    }
-
-    //bool SetEncM2(uint8_t address, int32_t val);
-    pub fn set_enc_m2(&mut self, _value: i32) -> Result<(), &str> {
-        unimplemented!()
-    }
-
     /*
+    uint32_t ReadEncM1(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
+    uint32_t ReadEncM2(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
+    bool SetEncM1(uint8_t address, int32_t val);
+    bool SetEncM2(uint8_t address, int32_t val);
     uint32_t ReadSpeedM1(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
     uint32_t ReadSpeedM2(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
     */
+
     //bool ResetEncoders(uint8_t address);
     pub fn reset_encoders(&mut self) -> Result<(), std::io::Error> {
         self.write_simple_command(Command::RESETENC as u8)
@@ -365,6 +342,8 @@ impl Roboclaw {
     }
 
     /*
+    bool SetMinVoltageMainBattery(uint8_t address, uint8_t voltage);
+    bool SetMaxVoltageMainBattery(uint8_t address, uint8_t voltage);
     bool SetMinVoltageLogicBattery(uint8_t address, uint8_t voltage);
     bool SetMaxVoltageLogicBattery(uint8_t address, uint8_t voltage);
     bool SetM1VelocityPID(uint8_t address, float Kp, float Ki, float Kd, uint32_t qpps);
@@ -392,8 +371,6 @@ impl Roboclaw {
     }
 
     /*
-
-
     bool SpeedM1(uint8_t address, uint32_t speed);
     bool SpeedM2(uint8_t address, uint32_t speed);
     */
