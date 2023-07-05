@@ -174,40 +174,16 @@ pub enum BufferStatus {
     LastCommandExecuting,
 }
 
-fn split_u16_u8(x: u16) -> [u8; 2] {
-    [(x >> 8) as u8, x as u8]
-}
-
-fn split_i16_u8(x: i16) -> [u8; 2] {
-    [(x >> 8) as u8, x as u8]
-}
-
-fn split_u32_u8(x: u32) -> [u8; 4] {
-    [(x >> 24) as u8, (x >> 16) as u8, (x >> 8) as u8, x as u8]
-}
-
-fn split_i32_u8(x: i32) -> [u8; 4] {
-    [(x >> 24) as u8, (x >> 16) as u8, (x >> 8) as u8, x as u8]
-}
-
-fn join_u8(high: u8, low: u8) -> u16 {
-    ((high as u16) << 8) | low as u16
-}
-
-fn join_u8_u32(byte0: u8, byte1: u8, byte2: u8, byte3: u8) -> u32 {
-    ((byte0 as u32) << 24) | ((byte1 as u32) << 16) | ((byte2 as u32) << 8) | (byte3 as u32)
-}
-
 fn crc(buf: &Vec<u8>) -> Vec<u8> {
     let crc = crc16::State::<crc16::XMODEM>::calculate(&buf);
-    split_u16_u8(crc).to_vec()
+    u16::to_be_bytes(crc).to_vec()
 }
 
 pub struct Roboclaw<S: SerialPort + Sized> {
     port: S,
 }
 
-impl <S: SerialPort + Sized> Roboclaw<S> {
+impl<S: SerialPort + Sized> Roboclaw<S> {
     pub fn new(port: S) -> Self {
         Roboclaw { port: port }
     }
@@ -219,7 +195,7 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
         let mut buf = vec![0; num_bytes + CRC_SIZE];
         self.port.read(&mut buf)?;
         let crc = buf.split_off(num_bytes);
-        let crc_read = join_u8(crc[0], crc[1]);
+        let crc_read = u16::from_be_bytes([crc[0], crc[1]]);
         let crc_calc = crc16::State::<crc16::XMODEM>::calculate(&[&command[..], &buf].concat());
         if crc_read == crc_calc {
             Ok(buf)
@@ -356,13 +332,13 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
     //uint16_t ReadMainBatteryVoltage(uint8_t address,bool *valid=NULL);
     pub fn read_main_battery_voltage(&mut self) -> Result<f32, std::io::Error> {
         self.read_command(Command::GETMBATT as u8, 2)
-            .map(|data| (join_u8(data[0], data[1]) as f32) / 10.0)
+            .map(|data| (u16::from_be_bytes([data[0], data[1]]) as f32) / 10.0)
     }
 
     //uint16_t ReadLogicBatteryVoltage(uint8_t address,bool *valid=NULL);
     pub fn read_logic_battery_voltage(&mut self) -> Result<f32, std::io::Error> {
         self.read_command(Command::GETLBATT as u8, 2)
-            .map(|data| (join_u8(data[0], data[1]) as f32) / 10.0)
+            .map(|data| (u16::from_be_bytes([data[0], data[1]]) as f32) / 10.0)
     }
 
     /*
@@ -376,19 +352,19 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
 
     //bool DutyM1(uint8_t address, uint16_t duty);
     pub fn duty_m1(&mut self, duty: i16) -> std::io::Result<()> {
-        self.write_command(Command::M1DUTY as u8, &split_i16_u8(duty).to_vec())
+        self.write_command(Command::M1DUTY as u8, &i16::to_be_bytes(duty).to_vec())
     }
 
     //bool DutyM2(uint8_t address, uint16_t duty);
     pub fn duty_m2(&mut self, duty: i16) -> std::io::Result<()> {
-        self.write_command(Command::M2DUTY as u8, &split_i16_u8(duty).to_vec())
+        self.write_command(Command::M2DUTY as u8, &i16::to_be_bytes(duty).to_vec())
     }
 
     //bool DutyM1M2(uint8_t address, uint16_t duty1, uint16_t duty2);
     pub fn duty_m1_m2(&mut self, duty1: i16, duty2: i16) -> std::io::Result<()> {
         self.write_command(
             Command::MIXEDDUTY as u8,
-            &[&split_i16_u8(duty1)[..], &split_i16_u8(duty2)[..]].concat(),
+            &[&i16::to_be_bytes(duty1)[..], &i16::to_be_bytes(duty2)[..]].concat(),
         )
     }
 
@@ -400,8 +376,8 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
     */
     //bool SpeedM1M2(uint8_t address, uint32_t speed1, uint32_t speed2);
     pub fn speed_m1_m2(&mut self, speed_1: i32, speed_2: i32) -> Result<(), std::io::Error> {
-        let speed_1_bytes = split_i32_u8(speed_1);
-        let speed_2_bytes = split_i32_u8(speed_2);
+        let speed_1_bytes = i32::to_be_bytes(speed_1);
+        let speed_2_bytes = i32::to_be_bytes(speed_2);
         let data = [&speed_1_bytes[..], &speed_2_bytes[..]].concat();
         self.write_command(Command::MIXEDSPEED as u8, &data)
     }
@@ -412,28 +388,40 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
     */
     //bool SpeedDistanceM1(uint8_t address, uint32_t speed, uint32_t distance, uint8_t flag=0);
     pub fn speed_distance_m1(&mut self, speed: i32, distance: u32) -> Result<(), std::io::Error> {
-        let speed_bytes = split_i32_u8(speed);
-        let distance_bytes = split_u32_u8(distance);
+        let speed_bytes = i32::to_be_bytes(speed);
+        let distance_bytes = u32::to_be_bytes(distance);
         let data = [&speed_bytes[..], &distance_bytes[..], &vec![1u8]].concat();
         self.write_command(Command::M1SPEEDDIST as u8, &data)
     }
 
-
     //bool SpeedDistanceM2(uint8_t address, uint32_t speed, uint32_t distance, uint8_t flag=0);
     pub fn speed_distance_m2(&mut self, speed: i32, distance: u32) -> Result<(), std::io::Error> {
-        let speed_bytes = split_i32_u8(speed);
-        let distance_bytes = split_u32_u8(distance);
+        let speed_bytes = i32::to_be_bytes(speed);
+        let distance_bytes = u32::to_be_bytes(distance);
         let data = [&speed_bytes[..], &distance_bytes[..], &vec![1u8]].concat();
         self.write_command(Command::M2SPEEDDIST as u8, &data)
     }
 
     //bool SpeedDistanceM1M2(uint8_t address, uint32_t speed1, uint32_t distance1, uint32_t speed2, uint32_t distance2, uint8_t flag=0);
-    pub fn speed_distance_m1_m2(&mut self, speed_1: i32, distance_1: u32, speed_2: i32, distance_2: u32) -> Result<(), std::io::Error> {
-        let speed_1_bytes = split_i32_u8(speed_1);
-        let distance_1_bytes = split_u32_u8(distance_1);
-        let speed_2_bytes = split_i32_u8(speed_2);
-        let distance_2_bytes = split_u32_u8(distance_2);
-        let data = [&speed_1_bytes[..], &distance_1_bytes[..], &speed_2_bytes[..], &distance_2_bytes[..], &vec![1u8]].concat();
+    pub fn speed_distance_m1_m2(
+        &mut self,
+        speed_1: i32,
+        distance_1: u32,
+        speed_2: i32,
+        distance_2: u32,
+    ) -> Result<(), std::io::Error> {
+        let speed_1_bytes = i32::to_be_bytes(speed_1);
+        let distance_1_bytes = u32::to_be_bytes(distance_1);
+        let speed_2_bytes = i32::to_be_bytes(speed_2);
+        let distance_2_bytes = u32::to_be_bytes(distance_2);
+        let data = [
+            &speed_1_bytes[..],
+            &distance_1_bytes[..],
+            &speed_2_bytes[..],
+            &distance_2_bytes[..],
+            &vec![1u8],
+        ]
+        .concat();
         self.write_command(Command::MIXEDSPEEDDIST as u8, &data)
     }
 
@@ -443,31 +431,47 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
     */
 
     //bool SpeedAccelDistanceM1M2(uint8_t address, uint32_t accel, uint32_t speed1, uint32_t distance1, uint32_t speed2, uint32_t distance2, uint8_t flag=0);
-    pub fn speed_accel_distance_m1_m2(&mut self, accel: u32, speed_1: i32, distance_1: u32, speed_2: i32, distance_2: u32) -> Result<(), std::io::Error> {
-        let accel_bytes = split_u32_u8(accel);
-        let speed_1_bytes = split_i32_u8(speed_1);
-        let distance_1_bytes = split_u32_u8(distance_1);
-        let speed_2_bytes = split_i32_u8(speed_2);
-        let distance_2_bytes = split_u32_u8(distance_2);
-        let data = [&accel_bytes[..], &speed_1_bytes[..], &distance_1_bytes[..], &speed_2_bytes[..], &distance_2_bytes[..], &vec![1u8]].concat();
+    pub fn speed_accel_distance_m1_m2(
+        &mut self,
+        accel: u32,
+        speed_1: i32,
+        distance_1: u32,
+        speed_2: i32,
+        distance_2: u32,
+    ) -> Result<(), std::io::Error> {
+        let accel_bytes = u32::to_be_bytes(accel);
+        let speed_1_bytes = i32::to_be_bytes(speed_1);
+        let distance_1_bytes = u32::to_be_bytes(distance_1);
+        let speed_2_bytes = i32::to_be_bytes(speed_2);
+        let distance_2_bytes = u32::to_be_bytes(distance_2);
+        let data = [
+            &accel_bytes[..],
+            &speed_1_bytes[..],
+            &distance_1_bytes[..],
+            &speed_2_bytes[..],
+            &distance_2_bytes[..],
+            &vec![1u8],
+        ]
+        .concat();
         self.write_command(Command::MIXEDSPEEDACCELDIST as u8, &data)
     }
 
     //bool ReadBuffers(uint8_t address, uint8_t &depth1, uint8_t &depth2);
     pub fn read_buffers(&mut self) -> std::io::Result<(BufferStatus, BufferStatus)> {
-        self.read_command(Command::GETBUFFERS as u8, 2)
-            .map(|data|
-            (match data[0] {
-                0x0 => BufferStatus::LastCommandExecuting,
-                0x80 => BufferStatus::Empty,
-                num => BufferStatus::NotEmpty(num)
-            }
-            , match data[1] {
-                0x0 => BufferStatus::LastCommandExecuting,
-                0x80 => BufferStatus::Empty,
-                num => BufferStatus::NotEmpty(num)
-            })
-        )
+        self.read_command(Command::GETBUFFERS as u8, 2).map(|data| {
+            (
+                match data[0] {
+                    0x0 => BufferStatus::LastCommandExecuting,
+                    0x80 => BufferStatus::Empty,
+                    num => BufferStatus::NotEmpty(num),
+                },
+                match data[1] {
+                    0x0 => BufferStatus::LastCommandExecuting,
+                    0x80 => BufferStatus::Empty,
+                    num => BufferStatus::NotEmpty(num),
+                },
+            )
+        })
     }
     /*
     bool ReadPWMs(uint8_t address, int16_t &pwm1, int16_t &pwm2);
@@ -489,8 +493,8 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
         self.read_command(Command::GETMINMAXMAINVOLTAGES as u8, 4)
             .map(|data| {
                 (
-                    join_u8(data[0], data[1]) as f32 / 10.0,
-                    join_u8(data[2], data[3]) as f32 / 10.0,
+                    u16::from_be_bytes([data[0], data[1]]) as f32 / 10.0,
+                    u16::from_be_bytes([data[2], data[3]]) as f32 / 10.0,
                 )
             })
     }
@@ -505,23 +509,39 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
     bool SpeedAccelDeccelPositionM2(uint8_t address,uint32_t accel,uint32_t speed,uint32_t deccel,uint32_t position,uint8_t flag);
     */
     //bool SpeedAccelDeccelPositionM1M2(uint8_t address,uint32_t accel1,uint32_t speed1,uint32_t deccel1,uint32_t position1,uint32_t accel2,uint32_t speed2,uint32_t deccel2,uint32_t position2,uint8_t flag);
-    pub fn speed_accel_deccel_position_m1_m2(&mut self,
-        accel_1: u32, speed_1: i32, deccel_1: u32, position_1: u32,
-        accel_2: u32, speed_2: i32, deccel_2: u32, position_2: u32) -> Result<(), std::io::Error> {
-        let accel_1_bytes = split_u32_u8(accel_1);
-        let speed_1_bytes = split_i32_u8(speed_1);
-        let deccel_1_bytes = split_u32_u8(deccel_1);
-        let position_1_bytes = split_u32_u8(position_1);
+    pub fn speed_accel_deccel_position_m1_m2(
+        &mut self,
+        accel_1: u32,
+        speed_1: i32,
+        deccel_1: u32,
+        position_1: u32,
+        accel_2: u32,
+        speed_2: i32,
+        deccel_2: u32,
+        position_2: u32,
+    ) -> Result<(), std::io::Error> {
+        let accel_1_bytes = u32::to_be_bytes(accel_1);
+        let speed_1_bytes = i32::to_be_bytes(speed_1);
+        let deccel_1_bytes = u32::to_be_bytes(deccel_1);
+        let position_1_bytes = u32::to_be_bytes(position_1);
 
-        let accel_2_bytes = split_u32_u8(accel_2);
-        let speed_2_bytes = split_i32_u8(speed_2);
-        let deccel_2_bytes = split_u32_u8(deccel_2);
-        let position_2_bytes = split_u32_u8(position_2);
+        let accel_2_bytes = u32::to_be_bytes(accel_2);
+        let speed_2_bytes = i32::to_be_bytes(speed_2);
+        let deccel_2_bytes = u32::to_be_bytes(deccel_2);
+        let position_2_bytes = u32::to_be_bytes(position_2);
 
         let data = [
-            &accel_1_bytes[..], &speed_1_bytes[..], &deccel_1_bytes[..], &position_1_bytes[..],
-            &accel_2_bytes[..], &speed_2_bytes[..], &deccel_2_bytes[..], &position_2_bytes[..],
-            &vec![1u8]].concat();
+            &accel_1_bytes[..],
+            &speed_1_bytes[..],
+            &deccel_1_bytes[..],
+            &position_1_bytes[..],
+            &accel_2_bytes[..],
+            &speed_2_bytes[..],
+            &deccel_2_bytes[..],
+            &position_2_bytes[..],
+            &vec![1u8],
+        ]
+        .concat();
         self.write_command(Command::MIXEDSPEEDACCELDECCELPOS as u8, &data)
     }
 
@@ -538,8 +558,8 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
         self.read_command(Command::GETENCODERS as u8, 8)
             .map(|data| {
                 (
-                    join_u8_u32(data[0], data[1], data[2], data[3]),
-                    join_u8_u32(data[4], data[5], data[6], data[7]),
+                    u32::from_be_bytes([data[0], data[1], data[2], data[3]]),
+                    u32::from_be_bytes([data[4], data[5], data[6], data[7]]),
                 )
             })
     }
@@ -554,7 +574,7 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
     //uint16_t ReadError(uint8_t address,bool *valid=NULL);
     pub fn read_error(&mut self) -> Result<StatusFlags, std::io::Error> {
         self.read_command(Command::GETERROR as u8, 2)
-            .map(|data| StatusFlags::from_bits(join_u8(data[0], data[1])).unwrap())
+            .map(|data| StatusFlags::from_bits(u16::from_be_bytes([data[0], data[1]])).unwrap())
     }
 
     /*
@@ -568,7 +588,7 @@ impl <S: SerialPort + Sized> Roboclaw<S> {
     //bool GetConfig(uint8_t address, uint16_t &config);
     pub fn get_config(&mut self) -> Result<ConfigFlags, std::io::Error> {
         self.read_command(Command::GETCONFIG as u8, 2)
-            .map(|data| ConfigFlags::from_bits(join_u8(data[0], data[1])).unwrap())
+            .map(|data| ConfigFlags::from_bits(u16::from_be_bytes([data[0], data[1]])).unwrap())
     }
 
     /*
