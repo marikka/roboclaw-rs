@@ -13,6 +13,7 @@ homepage = "https://github.com/marikka/roboclaw-rs"
 repository = "https://github.com/marikka/roboclaw-rs"
 
 [dependencies]
-serial = "0.4"
+embedded-hal = "0.2.7"
 crc16 = "0.4.0"
 bitflags = "1.0.4"
+nb = "1.1.0"

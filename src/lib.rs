@@ -1,5 +1,4 @@
-extern crate serial;
-use serial::prelude::*;
+use embedded_hal::serial;
 
 extern crate crc16;
 #[macro_use]
@@ -167,6 +166,13 @@ enum Command {
     FLAGBOOTLOADER = 255, //Only available via USB communications
 }
 
+pub enum Error {
+    CRCError,
+    ReadError,
+    WriteError,
+    ReturnValueError,
+}
+
 #[derive(PartialEq, Debug)]
 pub enum BufferStatus {
     NotEmpty(u8),
@@ -174,77 +180,97 @@ pub enum BufferStatus {
     LastCommandExecuting,
 }
 
-fn crc(buf: &Vec<u8>) -> Vec<u8> {
+fn crc(buf: &[u8]) -> [u8; 2] {
     let crc = crc16::State::<crc16::XMODEM>::calculate(&buf);
-    u16::to_be_bytes(crc).to_vec()
+    u16::to_be_bytes(crc)
 }
 
-pub struct Roboclaw<S: SerialPort + Sized> {
+pub struct Roboclaw<S: serial::Read<u8> + serial::Write<u8>> {
     port: S,
 }
 
-impl<S: SerialPort + Sized> Roboclaw<S> {
+impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
     pub fn new(port: S) -> Self {
         Roboclaw { port: port }
     }
 
-    fn read_command(&mut self, command_code: u8, num_bytes: usize) -> std::io::Result<Vec<u8>> {
+    fn write_bytes(&mut self, bytes: &[u8]) -> nb::Result<usize, <S as serial::Write<u8>>::Error> {
+        for byte in bytes {
+            self.port.write(*byte)?;
+        }
+        Ok(bytes.len())
+    }
+
+    fn read_bytes(
+        &mut self,
+        bytes: &mut [u8],
+    ) -> nb::Result<usize, <S as serial::Read<u8>>::Error> {
+        let mut i = 0;
+        while let nb::Result::Ok(byte) = self.port.read() {
+            bytes[i] = byte;
+            i += 1;
+        }
+
+        nb::Result::Ok(i)
+    }
+
+    fn read_command(&mut self, command_code: u8, num_bytes: usize) -> nb::Result<Vec<u8>, Error> {
         const CRC_SIZE: usize = 2;
         let command = vec![ADDRESS, command_code];
-        self.port.write(&command[..])?;
+        self.write_bytes(&command[..])
+            .map_err(|e| nb::Error::Other(Error::WriteError))?;
         let mut buf = vec![0; num_bytes + CRC_SIZE];
-        self.port.read(&mut buf)?;
+        self.read_bytes(&mut buf)
+            .map_err(|e| nb::Error::Other(Error::ReadError))?;
         let crc = buf.split_off(num_bytes);
         let crc_read = u16::from_be_bytes([crc[0], crc[1]]);
         let crc_calc = crc16::State::<crc16::XMODEM>::calculate(&[&command[..], &buf].concat());
         if crc_read == crc_calc {
             Ok(buf)
         } else {
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "crc error"))
+            nb::Result::Err(nb::Error::Other(Error::CRCError))
         }
     }
 
-    fn write_simple_command(&mut self, command_code: u8) -> std::io::Result<()> {
+    fn write_simple_command(&mut self, command_code: u8) -> nb::Result<(), Error> {
         let command = vec![ADDRESS, command_code];
         let crc = crc(&command);
         let command_bytes = [&[ADDRESS], &command[..], &crc[..]].concat();
-        self.port.write(&command_bytes)?;
+        self.write_bytes(&command_bytes)
+            .map_err(|e| nb::Error::Other(Error::WriteError))?;
         let mut buf = vec![0; 1];
-        self.port.read(&mut buf)?;
+        self.read_bytes(&mut buf)
+            .map_err(|e| nb::Error::Other(Error::ReadError))?;
         if buf[0] == 0xFF {
             Ok(())
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "return value error",
-            ))
+            nb::Result::Err(nb::Error::Other(Error::ReturnValueError))
         }
     }
 
-    fn write_command(&mut self, command_code: u8, data: &Vec<u8>) -> std::io::Result<()> {
+    fn write_command(&mut self, command_code: u8, data: &Vec<u8>) -> nb::Result<(), Error> {
         let mut command = vec![ADDRESS, command_code];
         let mut data_copy = data.clone();
         command.append(&mut data_copy);
         let crc = crc(&command);
         let command_bytes = [&[ADDRESS], &command[..], &crc[..]].concat();
-        self.port.write(&command_bytes)?;
+        self.write_bytes(&command_bytes)
+            .map_err(|e| nb::Error::Other(Error::WriteError))?;
         let mut buf = vec![0; 1];
-        self.port.read(&mut buf)?;
+        self.read_bytes(&mut buf)
+            .map_err(|e| nb::Error::Other(Error::ReadError))?;
         if buf[0] == 0xFF {
             Ok(())
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "return value error",
-            ))
+            nb::Result::Err(nb::Error::Other(Error::ReturnValueError))
         }
     }
 
-    pub fn forward_m1(&mut self, speed: u8) -> std::io::Result<()> {
+    pub fn forward_m1(&mut self, speed: u8) -> nb::Result<(), Error> {
         self.write_command(Command::M1FORWARD as u8, &vec![speed])
     }
 
-    pub fn backward_m1(&mut self, speed: u8) -> std::io::Result<()> {
+    pub fn backward_m1(&mut self, speed: u8) -> nb::Result<(), Error> {
         self.write_command(Command::M1BACKWARD as u8, &vec![speed])
     }
 
@@ -256,43 +282,43 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
         unimplemented!()
     }
 
-    pub fn forward_m2(&mut self, speed: u8) -> std::io::Result<()> {
+    pub fn forward_m2(&mut self, speed: u8) -> nb::Result<(), Error> {
         self.write_command(Command::M2FORWARD as u8, &vec![speed])
     }
 
-    pub fn backward_m2(&mut self, speed: u8) -> std::io::Result<()> {
+    pub fn backward_m2(&mut self, speed: u8) -> nb::Result<(), Error> {
         self.write_command(Command::M2BACKWARD as u8, &vec![speed])
     }
 
-    pub fn forward_backward_m1(&mut self, speed: u8) -> std::io::Result<()> {
+    pub fn forward_backward_m1(&mut self, speed: u8) -> nb::Result<(), Error> {
         self.write_command(Command::M17BIT as u8, &vec![speed])
     }
 
-    pub fn forward_backward_m2(&mut self, speed: u8) -> std::io::Result<()> {
+    pub fn forward_backward_m2(&mut self, speed: u8) -> nb::Result<(), Error> {
         self.write_command(Command::M27BIT as u8, &vec![speed])
     }
 
-    pub fn forward_mixed(&mut self, speed: u8) -> Result<(), std::io::Error> {
+    pub fn forward_mixed(&mut self, speed: u8) -> nb::Result<(), Error> {
         self.write_command(Command::MIXEDFORWARD as u8, &vec![speed])
     }
 
-    pub fn backward_mixed(&mut self, speed: u8) -> std::io::Result<()> {
+    pub fn backward_mixed(&mut self, speed: u8) -> nb::Result<(), Error> {
         self.write_command(Command::MIXEDBACKWARD as u8, &vec![speed])
     }
 
-    pub fn turn_right_mixed(&mut self, speed: u8) -> std::io::Result<()> {
+    pub fn turn_right_mixed(&mut self, speed: u8) -> nb::Result<(), Error> {
         self.write_command(Command::MIXEDRIGHT as u8, &vec![speed])
     }
 
-    pub fn turn_left_mixed(&mut self, speed: u8) -> std::io::Result<()> {
+    pub fn turn_left_mixed(&mut self, speed: u8) -> nb::Result<(), Error> {
         self.write_command(Command::MIXEDLEFT as u8, &vec![speed])
     }
 
-    pub fn forward_backward_mixed(&mut self, speed: u8) -> std::io::Result<()> {
+    pub fn forward_backward_mixed(&mut self, speed: u8) -> nb::Result<(), Error> {
         self.write_command(Command::MIXEDFB as u8, &vec![speed])
     }
 
-    pub fn left_right_mixed(&mut self, speed: u8) -> std::io::Result<()> {
+    pub fn left_right_mixed(&mut self, speed: u8) -> nb::Result<(), Error> {
         self.write_command(Command::MIXEDLR as u8, &vec![speed])
     }
 
@@ -321,7 +347,7 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
     uint32_t ReadSpeedM2(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
     */
     //bool ResetEncoders(uint8_t address);
-    pub fn reset_encoders(&mut self) -> Result<(), std::io::Error> {
+    pub fn reset_encoders(&mut self) -> nb::Result<(), Error> {
         self.write_simple_command(Command::RESETENC as u8)
     }
 
@@ -330,13 +356,13 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
     */
 
     //uint16_t ReadMainBatteryVoltage(uint8_t address,bool *valid=NULL);
-    pub fn read_main_battery_voltage(&mut self) -> Result<f32, std::io::Error> {
+    pub fn read_main_battery_voltage(&mut self) -> nb::Result<f32, Error> {
         self.read_command(Command::GETMBATT as u8, 2)
             .map(|data| (u16::from_be_bytes([data[0], data[1]]) as f32) / 10.0)
     }
 
     //uint16_t ReadLogicBatteryVoltage(uint8_t address,bool *valid=NULL);
-    pub fn read_logic_battery_voltage(&mut self) -> Result<f32, std::io::Error> {
+    pub fn read_logic_battery_voltage(&mut self) -> nb::Result<f32, Error> {
         self.read_command(Command::GETLBATT as u8, 2)
             .map(|data| (u16::from_be_bytes([data[0], data[1]]) as f32) / 10.0)
     }
@@ -351,17 +377,17 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
     */
 
     //bool DutyM1(uint8_t address, uint16_t duty);
-    pub fn duty_m1(&mut self, duty: i16) -> std::io::Result<()> {
+    pub fn duty_m1(&mut self, duty: i16) -> nb::Result<(), Error> {
         self.write_command(Command::M1DUTY as u8, &i16::to_be_bytes(duty).to_vec())
     }
 
     //bool DutyM2(uint8_t address, uint16_t duty);
-    pub fn duty_m2(&mut self, duty: i16) -> std::io::Result<()> {
+    pub fn duty_m2(&mut self, duty: i16) -> nb::Result<(), Error> {
         self.write_command(Command::M2DUTY as u8, &i16::to_be_bytes(duty).to_vec())
     }
 
     //bool DutyM1M2(uint8_t address, uint16_t duty1, uint16_t duty2);
-    pub fn duty_m1_m2(&mut self, duty1: i16, duty2: i16) -> std::io::Result<()> {
+    pub fn duty_m1_m2(&mut self, duty1: i16, duty2: i16) -> nb::Result<(), Error> {
         self.write_command(
             Command::MIXEDDUTY as u8,
             &[&i16::to_be_bytes(duty1)[..], &i16::to_be_bytes(duty2)[..]].concat(),
@@ -375,7 +401,7 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
     bool SpeedM2(uint8_t address, uint32_t speed);
     */
     //bool SpeedM1M2(uint8_t address, uint32_t speed1, uint32_t speed2);
-    pub fn speed_m1_m2(&mut self, speed_1: i32, speed_2: i32) -> Result<(), std::io::Error> {
+    pub fn speed_m1_m2(&mut self, speed_1: i32, speed_2: i32) -> nb::Result<(), Error> {
         let speed_1_bytes = i32::to_be_bytes(speed_1);
         let speed_2_bytes = i32::to_be_bytes(speed_2);
         let data = [&speed_1_bytes[..], &speed_2_bytes[..]].concat();
@@ -387,7 +413,7 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
     bool SpeedAccelM1M2(uint8_t address, uint32_t accel, uint32_t speed1, uint32_t speed2);
     */
     //bool SpeedDistanceM1(uint8_t address, uint32_t speed, uint32_t distance, uint8_t flag=0);
-    pub fn speed_distance_m1(&mut self, speed: i32, distance: u32) -> Result<(), std::io::Error> {
+    pub fn speed_distance_m1(&mut self, speed: i32, distance: u32) -> nb::Result<(), Error> {
         let speed_bytes = i32::to_be_bytes(speed);
         let distance_bytes = u32::to_be_bytes(distance);
         let data = [&speed_bytes[..], &distance_bytes[..], &vec![1u8]].concat();
@@ -395,7 +421,7 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
     }
 
     //bool SpeedDistanceM2(uint8_t address, uint32_t speed, uint32_t distance, uint8_t flag=0);
-    pub fn speed_distance_m2(&mut self, speed: i32, distance: u32) -> Result<(), std::io::Error> {
+    pub fn speed_distance_m2(&mut self, speed: i32, distance: u32) -> nb::Result<(), Error> {
         let speed_bytes = i32::to_be_bytes(speed);
         let distance_bytes = u32::to_be_bytes(distance);
         let data = [&speed_bytes[..], &distance_bytes[..], &vec![1u8]].concat();
@@ -409,7 +435,7 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
         distance_1: u32,
         speed_2: i32,
         distance_2: u32,
-    ) -> Result<(), std::io::Error> {
+    ) -> nb::Result<(), Error> {
         let speed_1_bytes = i32::to_be_bytes(speed_1);
         let distance_1_bytes = u32::to_be_bytes(distance_1);
         let speed_2_bytes = i32::to_be_bytes(speed_2);
@@ -438,7 +464,7 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
         distance_1: u32,
         speed_2: i32,
         distance_2: u32,
-    ) -> Result<(), std::io::Error> {
+    ) -> nb::Result<(), Error> {
         let accel_bytes = u32::to_be_bytes(accel);
         let speed_1_bytes = i32::to_be_bytes(speed_1);
         let distance_1_bytes = u32::to_be_bytes(distance_1);
@@ -457,7 +483,7 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
     }
 
     //bool ReadBuffers(uint8_t address, uint8_t &depth1, uint8_t &depth2);
-    pub fn read_buffers(&mut self) -> std::io::Result<(BufferStatus, BufferStatus)> {
+    pub fn read_buffers(&mut self) -> nb::Result<(BufferStatus, BufferStatus), Error> {
         self.read_command(Command::GETBUFFERS as u8, 2).map(|data| {
             (
                 match data[0] {
@@ -489,7 +515,7 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
 
     //bool ReadMinMaxMainVoltages(uint8_t address,uint16_t &min,uint16_t &max);
 
-    pub fn read_min_max_main_voltages(&mut self) -> Result<(f32, f32), std::io::Error> {
+    pub fn read_min_max_main_voltages(&mut self) -> nb::Result<(f32, f32), Error> {
         self.read_command(Command::GETMINMAXMAINVOLTAGES as u8, 4)
             .map(|data| {
                 (
@@ -519,7 +545,7 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
         speed_2: i32,
         deccel_2: u32,
         position_2: u32,
-    ) -> Result<(), std::io::Error> {
+    ) -> nb::Result<(), Error> {
         let accel_1_bytes = u32::to_be_bytes(accel_1);
         let speed_1_bytes = i32::to_be_bytes(speed_1);
         let deccel_1_bytes = u32::to_be_bytes(deccel_1);
@@ -554,7 +580,7 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
     bool GetDeadBand(uint8_t address, uint8_t &Min, uint8_t &Max);
     */
     //bool ReadEncoders(uint8_t address,uint32_t &enc1,uint32_t &enc2);
-    pub fn read_encoders(&mut self) -> Result<(u32, u32), std::io::Error> {
+    pub fn read_encoders(&mut self) -> nb::Result<(u32, u32), Error> {
         self.read_command(Command::GETENCODERS as u8, 8)
             .map(|data| {
                 (
@@ -572,7 +598,7 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
     */
 
     //uint16_t ReadError(uint8_t address,bool *valid=NULL);
-    pub fn read_error(&mut self) -> Result<StatusFlags, std::io::Error> {
+    pub fn read_error(&mut self) -> nb::Result<StatusFlags, Error> {
         self.read_command(Command::GETERROR as u8, 2)
             .map(|data| StatusFlags::from_bits(u16::from_be_bytes([data[0], data[1]])).unwrap())
     }
@@ -586,7 +612,7 @@ impl<S: SerialPort + Sized> Roboclaw<S> {
     bool SetConfig(uint8_t address, uint16_t config);
     */
     //bool GetConfig(uint8_t address, uint16_t &config);
-    pub fn get_config(&mut self) -> Result<ConfigFlags, std::io::Error> {
+    pub fn get_config(&mut self) -> nb::Result<ConfigFlags, Error> {
         self.read_command(Command::GETCONFIG as u8, 2)
             .map(|data| ConfigFlags::from_bits(u16::from_be_bytes([data[0], data[1]])).unwrap())
     }
