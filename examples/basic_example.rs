@@ -1,22 +1,70 @@
 use std::time::Duration;
 
 use roboclaw::Roboclaw;
-use serial::SerialPort;
+use serialport::{DataBits, FlowControl, Parity, StopBits};
+use std::io::{ErrorKind as IoErrorKind, Read, Write};
+
+pub struct SerialWrapper(pub Box<dyn serialport::SerialPort>);
+impl SerialWrapper {
+    pub fn open() -> Self {
+        let port = serialport::new(
+            std::env::var("SERIAL_PORT").expect("SERIAL_PORT env variable not set"),
+            9600,
+        )
+        .data_bits(DataBits::Eight)
+        .flow_control(FlowControl::None)
+        .parity(Parity::None)
+        .stop_bits(StopBits::One)
+        .timeout(Duration::from_millis(1000))
+        .open()
+        .expect("Failed to open serial port");
+
+        port.clear(serialport::ClearBuffer::Input)
+            .expect("error clearing input buffer");
+        SerialWrapper(port)
+    }
+}
+
+/// Helper to convert std::io::Error to the nb::Error
+fn translate_io_errors(err: std::io::Error) -> nb::Error<IoErrorKind> {
+    match err.kind() {
+        IoErrorKind::WouldBlock | IoErrorKind::TimedOut | IoErrorKind::Interrupted => {
+            nb::Error::WouldBlock
+        }
+        err => nb::Error::Other(err),
+    }
+}
+
+impl embedded_hal::serial::Read<u8> for SerialWrapper {
+    type Error = IoErrorKind;
+
+    fn read(&mut self) -> nb::Result<u8, Self::Error> {
+        let mut buffer = [0; 1];
+        let bytes_read = self.0.read(&mut buffer).map_err(translate_io_errors)?;
+        if bytes_read == 1 {
+            Ok(buffer[0])
+        } else {
+            Err(nb::Error::WouldBlock)
+        }
+    }
+}
+
+impl embedded_hal::serial::Write<u8> for SerialWrapper {
+    type Error = IoErrorKind;
+
+    fn write(&mut self, word: u8) -> nb::Result<(), Self::Error> {
+        self.0.write(&[word]).map_err(translate_io_errors)?;
+        Ok(())
+    }
+
+    fn flush(&mut self) -> nb::Result<(), Self::Error> {
+        self.0.flush().map_err(translate_io_errors)
+    }
+}
 
 // WARNING: Running this example will actually run the motors
-fn main() -> Result<(), std::io::Error> {
-    let serial_port_device_name =
-        std::env::var("SERIAL_PORT").expect("SERIAL_PORT env variable not set");
-    let mut port = serial::open(&serial_port_device_name).expect("opening serial failed");
-    port.reconfigure(&|settings| {
-        settings.set_baud_rate(serial::Baud9600)?;
-        settings.set_char_size(serial::Bits8);
-        settings.set_parity(serial::ParityNone);
-        settings.set_stop_bits(serial::Stop1);
-        settings.set_flow_control(serial::FlowNone);
-        Ok(())
-    })?;
-    port.set_timeout(Duration::from_millis(1000))?;
+fn main() -> Result<(), nb::Error<roboclaw::Error>> {
+    let port = SerialWrapper::open();
 
     let mut roboclaw = Roboclaw::new(port);
 

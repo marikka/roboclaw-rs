@@ -18,3 +18,6 @@ crc16 = "0.4.0"
 bitflags = "1.0.4"
 nb = "1.1.0"
 heapless = "0.7.16"
+
+[dev-dependencies]
+serialport = "4.2.1"

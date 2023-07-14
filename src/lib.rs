@@ -169,6 +169,7 @@ enum Command {
     FLAGBOOTLOADER = 255, //Only available via USB communications
 }
 
+#[derive(Debug)]
 pub enum Error {
     CRCError,
     ReadError,
@@ -234,11 +235,11 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
 
         let mut command_and_data: Vec<u8> = Vec::new();
         command_and_data.extend_from_slice(&command);
-        command_and_data.extend_from_slice(&buf);
+        command_and_data.extend_from_slice(&data_bytes);
 
         let crc_calc = crc16::State::<crc16::XMODEM>::calculate(&command_and_data);
         if crc_read == crc_calc {
-            Ok(buf)
+            Ok(Vec::from_slice(data_bytes).unwrap())
         } else {
             nb::Result::Err(nb::Error::Other(Error::CRCError))
         }
