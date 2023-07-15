@@ -1,6 +1,8 @@
 #![no_std]
 use embedded_hal::serial;
 
+type Crc = crc16::State<crc16::XMODEM>;
+
 type Vec<T> = heapless::Vec<T, 64>;
 
 extern crate crc16;
@@ -184,11 +186,6 @@ pub enum BufferStatus {
     LastCommandExecuting,
 }
 
-fn crc(buf: &[u8]) -> [u8; 2] {
-    let crc = crc16::State::<crc16::XMODEM>::calculate(&buf);
-    u16::to_be_bytes(crc)
-}
-
 pub struct Roboclaw<S: serial::Read<u8> + serial::Write<u8>> {
     port: S,
 }
@@ -218,62 +215,78 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
         nb::Result::Ok(i)
     }
 
-    fn read_command(&mut self, command_code: u8, num_bytes: usize) -> nb::Result<Vec<u8>, Error> {
-        const CRC_SIZE: usize = 2;
-        let command = [ADDRESS, command_code];
+    ///
+    /// Create the request bytes to write
+    /// If there's data to send, add 2 byte CRC
+    ///
+    fn create_request(command_code: Command, data: &[u8]) -> Result<Vec<u8>, ()> {
+        let mut request = Vec::new();
+        request.extend_from_slice(&[ADDRESS])?;
+        request.extend_from_slice(&[command_code as u8])?;
+        if data.len() > 0 {
+            request.extend_from_slice(&data)?;
+            let crc = u16::to_be_bytes(Crc::calculate(&request));
+            request.extend_from_slice(&crc)?;
+        }
 
-        self.write_bytes(&command)
+        Ok(request)
+    }
+
+    fn read_command(
+        &mut self,
+        command_code: Command,
+        num_bytes: usize,
+    ) -> nb::Result<Vec<u8>, Error> {
+        // Write command
+        let request = Self::create_request(command_code, &[]).unwrap();
+        self.write_bytes(&request)
             .map_err(|e| nb::Error::Other(Error::WriteError))?;
+
+        // Read response
         let mut buf = Vec::new();
+        const CRC_SIZE: usize = core::mem::size_of::<u16>();
         buf.resize(num_bytes + CRC_SIZE, 0);
 
         self.read_bytes(&mut buf)
             .map_err(|e| nb::Error::Other(Error::ReadError))?;
 
-        let (data_bytes, crc_bytes) = buf.split_at(num_bytes);
-        let crc_read = u16::from_be_bytes([crc_bytes[0], crc_bytes[1]]);
+        let (response_data, response_crc_bytes) = buf.split_at(num_bytes);
+        let reponse_crc = u16::from_be_bytes([response_crc_bytes[0], response_crc_bytes[1]]);
 
-        let mut command_and_data: Vec<u8> = Vec::new();
-        command_and_data.extend_from_slice(&command);
-        command_and_data.extend_from_slice(&data_bytes);
+        let mut request_and_response_data: Vec<u8> = Vec::new();
+        request_and_response_data.extend_from_slice(&request);
+        request_and_response_data.extend_from_slice(&response_data);
 
-        let crc_calc = crc16::State::<crc16::XMODEM>::calculate(&command_and_data);
-        if crc_read == crc_calc {
-            Ok(Vec::from_slice(data_bytes).unwrap())
+        if reponse_crc == Crc::calculate(&request_and_response_data) {
+            Ok(Vec::from_slice(response_data).unwrap())
         } else {
-            nb::Result::Err(nb::Error::Other(Error::CRCError))
+            Err(nb::Error::Other(Error::CRCError))
         }
     }
 
-    fn write_command(&mut self, command_code: u8, data: &[u8]) -> nb::Result<(), Error> {
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&[ADDRESS]);
-        payload.extend_from_slice(&[command_code]);
-        payload.extend_from_slice(&data);
-        let crc = crc(&payload);
-
-        let mut to_write = Vec::new();
-        to_write.extend_from_slice(&payload);
-        to_write.extend_from_slice(&crc);
-
-        self.write_bytes(&to_write)
+    fn write_command(&mut self, command_code: Command, data: &[u8]) -> nb::Result<(), Error> {
+        // Write command
+        let mut request = Self::create_request(command_code, data).unwrap();
+        self.write_bytes(&request)
             .map_err(|e| nb::Error::Other(Error::WriteError))?;
+
+        // Read response
         let mut buf = [0];
         self.read_bytes(&mut buf)
             .map_err(|e| nb::Error::Other(Error::ReadError))?;
         if buf[0] == 0xFF {
             Ok(())
         } else {
-            nb::Result::Err(nb::Error::Other(Error::ReturnValueError))
+            Err(nb::Error::Other(Error::ReturnValueError))
         }
     }
 
     pub fn forward_m1(&mut self, speed: u8) -> nb::Result<(), Error> {
-        self.write_command(Command::M1FORWARD as u8, &[speed])
+        self.write_command(Command::M1FORWARD, &[speed])
     }
 
     pub fn backward_m1(&mut self, speed: u8) -> nb::Result<(), Error> {
-        self.write_command(Command::M1BACKWARD as u8, &[speed])
+        self.write_command(Command::M1BACKWARD, &[speed])
     }
 
     pub fn set_min_voltage_main_battery(voltage: u8) {
@@ -285,43 +298,43 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
     }
 
     pub fn forward_m2(&mut self, speed: u8) -> nb::Result<(), Error> {
-        self.write_command(Command::M2FORWARD as u8, &[speed])
+        self.write_command(Command::M2FORWARD, &[speed])
     }
 
     pub fn backward_m2(&mut self, speed: u8) -> nb::Result<(), Error> {
-        self.write_command(Command::M2BACKWARD as u8, &[speed])
+        self.write_command(Command::M2BACKWARD, &[speed])
     }
 
     pub fn forward_backward_m1(&mut self, speed: u8) -> nb::Result<(), Error> {
-        self.write_command(Command::M17BIT as u8, &[speed])
+        self.write_command(Command::M17BIT, &[speed])
     }
 
     pub fn forward_backward_m2(&mut self, speed: u8) -> nb::Result<(), Error> {
-        self.write_command(Command::M27BIT as u8, &[speed])
+        self.write_command(Command::M27BIT, &[speed])
     }
 
     pub fn forward_mixed(&mut self, speed: u8) -> nb::Result<(), Error> {
-        self.write_command(Command::MIXEDFORWARD as u8, &[speed])
+        self.write_command(Command::MIXEDFORWARD, &[speed])
     }
 
     pub fn backward_mixed(&mut self, speed: u8) -> nb::Result<(), Error> {
-        self.write_command(Command::MIXEDBACKWARD as u8, &[speed])
+        self.write_command(Command::MIXEDBACKWARD, &[speed])
     }
 
     pub fn turn_right_mixed(&mut self, speed: u8) -> nb::Result<(), Error> {
-        self.write_command(Command::MIXEDRIGHT as u8, &[speed])
+        self.write_command(Command::MIXEDRIGHT, &[speed])
     }
 
     pub fn turn_left_mixed(&mut self, speed: u8) -> nb::Result<(), Error> {
-        self.write_command(Command::MIXEDLEFT as u8, &[speed])
+        self.write_command(Command::MIXEDLEFT, &[speed])
     }
 
     pub fn forward_backward_mixed(&mut self, speed: u8) -> nb::Result<(), Error> {
-        self.write_command(Command::MIXEDFB as u8, &[speed])
+        self.write_command(Command::MIXEDFB, &[speed])
     }
 
     pub fn left_right_mixed(&mut self, speed: u8) -> nb::Result<(), Error> {
-        self.write_command(Command::MIXEDLR as u8, &[speed])
+        self.write_command(Command::MIXEDLR, &[speed])
     }
 
     //uint32_t ReadEncM1(uint8_t address, uint8_t *status=NULL,bool *valid=NULL);
@@ -350,7 +363,7 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
     */
     //bool ResetEncoders(uint8_t address);
     pub fn reset_encoders(&mut self) -> nb::Result<(), Error> {
-        self.write_command(Command::RESETENC as u8, &[])
+        self.write_command(Command::RESETENC, &[])
     }
 
     /*
@@ -359,13 +372,13 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
 
     //uint16_t ReadMainBatteryVoltage(uint8_t address,bool *valid=NULL);
     pub fn read_main_battery_voltage(&mut self) -> nb::Result<f32, Error> {
-        self.read_command(Command::GETMBATT as u8, 2)
+        self.read_command(Command::GETMBATT, 2)
             .map(|data| (u16::from_be_bytes([data[0], data[1]]) as f32) / 10.0)
     }
 
     //uint16_t ReadLogicBatteryVoltage(uint8_t address,bool *valid=NULL);
     pub fn read_logic_battery_voltage(&mut self) -> nb::Result<f32, Error> {
-        self.read_command(Command::GETLBATT as u8, 2)
+        self.read_command(Command::GETLBATT, 2)
             .map(|data| (u16::from_be_bytes([data[0], data[1]]) as f32) / 10.0)
     }
 
@@ -380,12 +393,12 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
 
     //bool DutyM1(uint8_t address, uint16_t duty);
     pub fn duty_m1(&mut self, duty: i16) -> nb::Result<(), Error> {
-        self.write_command(Command::M1DUTY as u8, &i16::to_be_bytes(duty))
+        self.write_command(Command::M1DUTY, &i16::to_be_bytes(duty))
     }
 
     //bool DutyM2(uint8_t address, uint16_t duty);
     pub fn duty_m2(&mut self, duty: i16) -> nb::Result<(), Error> {
-        self.write_command(Command::M2DUTY as u8, &i16::to_be_bytes(duty))
+        self.write_command(Command::M2DUTY, &i16::to_be_bytes(duty))
     }
 
     //bool DutyM1M2(uint8_t address, uint16_t duty1, uint16_t duty2);
@@ -395,7 +408,7 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
         let mut duty_bytes = Vec::new();
         duty_bytes.extend_from_slice(&duty1_bytes);
         duty_bytes.extend_from_slice(&duty2_bytes);
-        self.write_command(Command::MIXEDDUTY as u8, &duty_bytes)
+        self.write_command(Command::MIXEDDUTY, &duty_bytes)
     }
 
     /*
@@ -411,7 +424,7 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
         let mut data = Vec::new();
         data.extend_from_slice(&speed_1_bytes);
         data.extend_from_slice(&speed_2_bytes);
-        self.write_command(Command::MIXEDSPEED as u8, &data)
+        self.write_command(Command::MIXEDSPEED, &data)
     }
     /*
     bool SpeedAccelM1(uint8_t address, uint32_t accel, uint32_t speed);
@@ -425,7 +438,7 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
         let mut data = Vec::new();
         data.extend_from_slice(&speed_bytes);
         data.extend_from_slice(&distance_bytes);
-        self.write_command(Command::M1SPEEDDIST as u8, &data)
+        self.write_command(Command::M1SPEEDDIST, &data)
     }
 
     //bool SpeedDistanceM2(uint8_t address, uint32_t speed, uint32_t distance, uint8_t flag=0);
@@ -435,7 +448,7 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
         let mut data = Vec::new();
         data.extend_from_slice(&speed_bytes);
         data.extend_from_slice(&distance_bytes);
-        self.write_command(Command::M2SPEEDDIST as u8, &data)
+        self.write_command(Command::M2SPEEDDIST, &data)
     }
 
     //bool SpeedDistanceM1M2(uint8_t address, uint32_t speed1, uint32_t distance1, uint32_t speed2, uint32_t distance2, uint8_t flag=0);
@@ -458,7 +471,7 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
         data.extend_from_slice(&speed_2_bytes);
         data.extend_from_slice(&distance_2_bytes);
         data.extend_from_slice(&buffer_byte);
-        self.write_command(Command::MIXEDSPEEDDIST as u8, &data)
+        self.write_command(Command::MIXEDSPEEDDIST, &data)
     }
 
     /*
@@ -489,12 +502,12 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
         data.extend_from_slice(&speed_2_bytes);
         data.extend_from_slice(&distance_2_bytes);
         data.extend_from_slice(&buffer_byte);
-        self.write_command(Command::MIXEDSPEEDACCELDIST as u8, &data)
+        self.write_command(Command::MIXEDSPEEDACCELDIST, &data)
     }
 
     //bool ReadBuffers(uint8_t address, uint8_t &depth1, uint8_t &depth2);
     pub fn read_buffers(&mut self) -> nb::Result<(BufferStatus, BufferStatus), Error> {
-        self.read_command(Command::GETBUFFERS as u8, 2).map(|data| {
+        self.read_command(Command::GETBUFFERS, 2).map(|data| {
             (
                 match data[0] {
                     0x0 => BufferStatus::LastCommandExecuting,
@@ -526,7 +539,7 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
     //bool ReadMinMaxMainVoltages(uint8_t address,uint16_t &min,uint16_t &max);
 
     pub fn read_min_max_main_voltages(&mut self) -> nb::Result<(f32, f32), Error> {
-        self.read_command(Command::GETMINMAXMAINVOLTAGES as u8, 4)
+        self.read_command(Command::GETMINMAXMAINVOLTAGES, 4)
             .map(|data| {
                 (
                     u16::from_be_bytes([data[0], data[1]]) as f32 / 10.0,
@@ -580,7 +593,7 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
         data.extend_from_slice(&position_2_bytes);
         data.extend_from_slice(&buffer_byte);
 
-        self.write_command(Command::MIXEDSPEEDACCELDECCELPOS as u8, &data)
+        self.write_command(Command::MIXEDSPEEDACCELDECCELPOS, &data)
     }
 
     /*
@@ -593,13 +606,12 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
     */
     //bool ReadEncoders(uint8_t address,uint32_t &enc1,uint32_t &enc2);
     pub fn read_encoders(&mut self) -> nb::Result<(u32, u32), Error> {
-        self.read_command(Command::GETENCODERS as u8, 8)
-            .map(|data| {
-                (
-                    u32::from_be_bytes([data[0], data[1], data[2], data[3]]),
-                    u32::from_be_bytes([data[4], data[5], data[6], data[7]]),
-                )
-            })
+        self.read_command(Command::GETENCODERS, 8).map(|data| {
+            (
+                u32::from_be_bytes([data[0], data[1], data[2], data[3]]),
+                u32::from_be_bytes([data[4], data[5], data[6], data[7]]),
+            )
+        })
     }
 
     /*
@@ -611,7 +623,7 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
 
     //uint16_t ReadError(uint8_t address,bool *valid=NULL);
     pub fn read_error(&mut self) -> nb::Result<StatusFlags, Error> {
-        self.read_command(Command::GETERROR as u8, 2)
+        self.read_command(Command::GETERROR, 2)
             .map(|data| StatusFlags::from_bits(u16::from_be_bytes([data[0], data[1]])).unwrap())
     }
 
@@ -625,7 +637,7 @@ impl<S: serial::Read<u8> + serial::Write<u8>> Roboclaw<S> {
     */
     //bool GetConfig(uint8_t address, uint16_t &config);
     pub fn get_config(&mut self) -> nb::Result<ConfigFlags, Error> {
-        self.read_command(Command::GETCONFIG as u8, 2)
+        self.read_command(Command::GETCONFIG, 2)
             .map(|data| ConfigFlags::from_bits(u16::from_be_bytes([data[0], data[1]])).unwrap())
     }
 
